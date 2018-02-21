@@ -79,6 +79,8 @@ function [seg,varargout] = chanvese(I,varargin)
 %  03 May  2012   Amanda Gaudreau   amanda.gaudreau@gmail.com     4
 %     changed mask creation to use initlevelset function & allowed for
 %     larger maximum image dimensions
+%  7  July 2016   Amanda Balderrama amanda.gaudreau@gmail.com     0
+%     Use function computeImageCentroid rather than computing in line
 %==========================================================================
 
 %% Initialization of Parameters
@@ -287,17 +289,8 @@ seg_rows = find(sum(seg,1) > 0);
 seg_cols = find(sum(seg,2) > 0);
 regprop.BoundingBox = [seg_rows(1),seg_cols(1),seg_rows(end)-seg_rows(1), seg_cols(end) - seg_cols(1)];
 % finds centroid (center of mass) of ROI ---------------------------------
-maskedI = I.*seg;
-totI = sum(maskedI(:));
-[c1mesh,r1mesh] = meshgrid(1:size(I,2),1:size(I,1));
-meanx = sum(sum(maskedI.*c1mesh))/totI;
-meany = sum(sum(maskedI.*r1mesh))/totI;
-regprop.IntCentroid = [meany, meanx];
-
-totI = sum(seg(:));
-meanx = sum(sum(seg.*c1mesh))/totI;
-meany = sum(sum(seg.*r1mesh))/totI;
-regprop.BinCentroid = [meany, meanx];
+regprop.IntCentroid = computeImageCentroid(I,'mask',seg);
+regprop.BinCentroid = computeImageCentroid(seg);
 regprop.niter = n;
 regprop.t = telaps;
 regprop.phih = phih;

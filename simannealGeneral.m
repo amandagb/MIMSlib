@@ -86,8 +86,12 @@ function [mu,exp_outputs,phiMI] = simannealGeneral(Fin,Min,varargin)
 %  28 May 2015   AGBalderrama      amandagbalderrama@gmail.com     1.3
 %     Automated scaling for cost functions based on initial cost to be
 %     equal to exactly 200
+%  14 Nov 2016   AGBalderrama      amandagbalderrama@gmail.com     1.4
+%     Uncommented section of the code which allows for summing MI along
+%     each dimension of the input image
 
-global M Mm Mn Md F Fvec Fm Fn Fd muItx Fmask Mmask Fnan Mnan...
+
+global M Mm Mn Md F Fvec Fm Fn Fd muItx Fmask Mmask Fnan Mnan plotCols plotRows...
   normcost nbins varparam mu0 x bestx fval bestfval ...
   temp tau gaussvec gaussvec_unit pval...
   c ub lb scaleJ costfstr fullcostname maxiter tx_scalefactor ty_scalefactor rot_scalefactor sx_scalefactor sy_scalefactor k_scalefactor
@@ -132,6 +136,9 @@ end
 
 Fnan = F;
 Fnan(~repmat(Fmask,[1,1,Fd])) = nan;
+nanI = sum(isnan(Fnan),3) < Fd;
+plotCols = find(sum(nanI) > 0);
+plotRows = find(sum(nanI') > 0);
 
 Mnan = M;
 Mnan(~repmat(Mmask,[1,1,Md])) = nan;
@@ -165,6 +172,10 @@ else
   lb = mu0 - def_bnd;
   lb(4:5) = 1./def_bnd(4:5).*c(4:5).^2;
   lb(6) = -def_bnd(6);
+end
+
+if strmatch('mu0',PropertyNames)
+  varargin{strmatch('mu0',PropertyNames)*2} = [0,0,0,1,1,0]; %tx, ty, theta, sx, sy, sk
 end
 
 if strmatch('maxiter',PropertyNames)
@@ -202,7 +213,7 @@ temp = zeros(nparam,initvars);
 % Set simulated annealing options
 optSA = saoptimset('simulannealbnd');
 if viewprogress
-  optSA.PlotFcns = {@saplotfall,@saplot_temp,@saplotvar,@overlayCH};%@overlayGrayEdge};%,@plotannealupdate};%@saplotbestx,@saplotbestf,@saplotx,@saplotf,@saplot_temp,@saplotvar};
+  optSA.PlotFcns = {@saplotfall,@saplot_temp,@saplotvar,@overlayGrayEdge};%@overlayCH};%,@plotannealupdate};%@saplotbestx,@saplotbestf,@saplotx,@saplotf,@saplot_temp,@saplotvar};
 else
   optSA.PlotFcns = {};
 end
@@ -248,6 +259,12 @@ else
   normcost = 0;
 end
 
+if strmatch('normto',PropertyNames)
+  targetJ0 = PropertyVal{strmatch('normto',PropertyNames)};
+else
+  targetJ0 = 100;
+end
+
 if strmatch('sumdim',PropertyNames)
   sumdim = PropertyVal{strmatch('sumdim',PropertyNames)};
 else
@@ -269,7 +286,6 @@ switch costfstr
   case 'mi'
     Jrng = [-1e-1,0];
     fullcoststr = '- MI';
-    normcost = 0;
   case 'mine'
     Jrng = [-log(max(sum(Fmask(:)),sum(Mmask(:)))),0];
     fullcoststr = 'MIC';
@@ -298,9 +314,18 @@ switch costfstr
     Jrng = log(sum((nanmax(abs(Fnan(:))) - nanmin(abs(Fnan(:)))).^pval).*[-1,1]);
     fullcoststr = sprintf('$$log(d_{\\ell%1.2f} + 1)$$',pval);
 end
-[J,totpxls] = computeCost(F,M,costfstr,'mu0',mu0./c,'Fmask',Fmask,'Mmask',Mmask,'pval',pval);
-targetJ0 = 200;
-scaleJ = log10((targetJ0*totpxls^(0^abs(normcost-1)))/J);% (floor(log10(t0))+1) - (log10(abs(diff(Jrng)))-1) - log10(sum(Fmask(:)))*0^normcost + 1;
+
+if normcost
+  [J,totpxls] = computeCost(Fnan,Mnan,costfstr,'mu0',mu0./c,'Fmask',Fmask,'Mmask',Mmask,'pval',pval,'sumdim',sumdim);
+  % targetJ0 = 50;
+  if strmatch(costfstr,'mi')
+    scaleJ = log10((targetJ0)/abs(J));% (floor(log10(t0))+1) - (log10(abs(diff(Jrng)))-1) - log10(sum(Fmask(:)))*0^normcost + 1;
+  else
+    scaleJ = log10((targetJ0*totpxls^(0^abs(normcost-1)))/abs(J));% (floor(log10(t0))+1) - (log10(abs(diff(Jrng)))-1) - log10(sum(Fmask(:)))*0^normcost + 1;
+  end
+else
+  scaleJ = 0;
+end
 fullcostname = sprintf('%s $$\\cdot 10^{%1.2f}$$',fullcoststr,scaleJ);
 [mu,phiMI] = simulannealbnd(@computeCostsub,mu0(varparam),lb(varparam),ub(varparam),optSA);
 
@@ -325,7 +350,7 @@ exp_outputs.nbins = nbins;
     mu = mu0;
     mu(varparam) = x;
     mu = mu./c;
-    TxM = transform_image(M,mu,'extrapval',M(1));
+    TxM = transform_image(Mnan,mu);%,'extrapval',nan);
     TxMask = transform_image(double(Mmask),mu,'extrapval',double(Mmask(1)));
     usei = and(Fmask,TxMask);
     TxMvec = reshape(TxM(:),[Mm*Mn,Md]);
@@ -343,25 +368,24 @@ exp_outputs.nbins = nbins;
           case 'mattes'
             
           case 'kde'
-            %Jrng = [
-            %if sumdim
-            % if Fd > 1
-            %    for i = 1:Fd
-            %      if sum(sum(Fnan(:,:,i)))
-            %        MI(i) = twoimgMIkde(Fnan(:,:,i),Mnan,varargin{:},'mu',mu);%'nbins',nbins);
-            %      else
-            %        MI(i) = 0;
-            %      end
-            %    end
-            %  else
-            %    MI = twoimgMIkde(Fnan,Mnan,varargin{:},'mu',mu);%'nbins',nbins);
-            %  end
-            %  J = -sum(MI);
-            %else
-            [MI,outinfo] = twoimgMIkde(Fnan,Mnan,varargin{:},'mu',mu);%'nbins',nbins);
-            totpxls = outinfo.nonNANpxls;
-            J = -MI;
-            %end
+            if sumdim
+              if Fd > 1
+                for i = 1:Fd
+                  if nansum(nansum(Fnan(:,:,i)))
+                    MI(i) = twoimgMIkde(Fnan(:,:,i),TxM,varargin{:});%'nbins',nbins);
+                  else
+                    MI(i) = 0;
+                  end
+                end
+              else
+                [MI,outinfo] = twoimgMIkde(Fnan,TxM,varargin{:});%'nbins',nbins);
+              end
+              J = -sum(MI);
+            else
+              [MI,outinfo] = twoimgMIkde(Fnan,TxM,varargin{:});%,'mu',mu);%'nbins',nbins);
+              totpxls = outinfo.nonNANpxls;
+              J = -MI;
+            end
         end
       case 'lp'
         %dvec = Fvec(usei(:),:) - TxMvec(usei(:),:);
@@ -396,9 +420,9 @@ exp_outputs.nbins = nbins;
         Jimg = reshape(dFM,[Fm,Fn]);
         J = nanmax(dFM) - nanmin(dFM);
       case 'max1'
-        dFM = sum(abs(dFM).^pval,2);
+        dFM = nansum(abs(dFM).^pval,2);
         Jimg = reshape(dFM./(1+dFM),[Fm,Fn]);
-        J = sum(Jimg(usei));
+        J = nansum(Jimg(usei));
         if normcost
           J = J/sum(usei(:));
         end
@@ -410,7 +434,6 @@ exp_outputs.nbins = nbins;
           J = J/sum(usei(:));
         end
     end
-    
     J = J*10^(scaleJ);
   end
 
@@ -424,13 +447,13 @@ exp_outputs.nbins = nbins;
     switch flag
       case 'init'
         plotvar = plot(optimvalues.iteration,...
-          optimvalues.x(min(length(optimvalues.x),varparam)), '.');
-        set(plotvar,'Tag','saplotvar');
+          optimvalues.x(min(length(optimvalues.x),varparam)), 'o','markersize',2);
+        set(plotvar,'Tag','saplotvar',{'markeredgecolor'},mat2cell(linecolrs,ones(1,6),3),{'markerfacecolor'},mat2cell(linecolrs,ones(1,6),3));
         hold on;
         
         plotvarbest = plot(optimvalues.iteration,...
           optimvalues.bestx(min(length(optimvalues.x),varparam)), 'x');
-        set(plotvarbest,'Tag','saplotvarbest');
+        set(plotvarbest,'Tag','saplotvarbest',{'markeredgecolor'},mat2cell(linecolrs,ones(1,6),3),{'markerfacecolor'},mat2cell(linecolrs,ones(1,6),3));
         
         xlabel('Iteration ($$i$$)','interp','latex');
         ylabel(sprintf('Parameter values'),'interp','none')
@@ -440,18 +463,20 @@ exp_outputs.nbins = nbins;
           set(plotvarbest(i),'Xdata',bestX, 'Ydata',bestY);
           
           if i > 3
-            titlestr2 = sprintf('%s %s = %1.4f;',titlestr2,param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
+            titlestr2 = sprintf('%s {\\color[rgb]{%1.3f %1.3f %1.3f}%s = %1.4f};',titlestr2,linecolrs(i,:),param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));%sprintf('%s $$%s$$ = %1.4f;',titlestr2,param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
+%
           else
-            titlestr1 = sprintf('%s %s = %1.4f;',titlestr1,param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
+            titlestr1 = sprintf('%s {\\color[rgb]{%1.3f %1.3f %1.3f}%s = %1.4f};',titlestr1,linecolrs(i,:),param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
+%sprintf('%s $$%s$$ = %1.4f;',titlestr1,param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
           end
         end
-        title({sprintf('$$ %s $$',titlestr1),sprintf('$$ %s $$',titlestr2)},'interpreter','latex');
+        title({sprintf('%s',titlestr1),sprintf('%s',titlestr2)},'interpreter','tex');
       case 'iter'
         plotvar = sort(findobj(get(gca,'Children'),'Tag','saplotvar'));
         for i = 1:length(plotvar)
           newX = [get(plotvar(i),'Xdata') optimvalues.iteration];
           newY = [get(plotvar(i),'Ydata') optimvalues.x(i)];
-          set(plotvar(i),'Xdata',newX, 'Ydata',newY);
+          set(plotvar(i),'Xdata',newX, 'Ydata',newY,'markeredgecolor',linecolrs(i,:),'markerfacecolor',linecolrs(i,:));
         end
         hold on;
         
@@ -459,15 +484,17 @@ exp_outputs.nbins = nbins;
         for i = 1:length(plotvarbest)
           bestX = [get(plotvarbest(i),'Xdata') optimvalues.iteration];
           bestY = [get(plotvarbest(i),'Ydata') optimvalues.bestx(i)];
-          set(plotvarbest(i),'Xdata',bestX, 'Ydata',bestY);
+          set(plotvarbest(i),'Xdata',bestX, 'Ydata',bestY,'markeredgecolor',linecolrs(i,:),'markerfacecolor',linecolrs(i,:));
           
           if i > 3
-            titlestr2 = sprintf('%s %s = %1.4f;',titlestr2,param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
+            titlestr2 = sprintf('%s {\\color[rgb]{%1.3f %1.3f %1.3f}%s_* = %1.4f};',titlestr2,linecolrs(i,:),param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));%sprintf('%s $$%s$$ = %1.4f;',titlestr2,param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
+%
           else
-            titlestr1 = sprintf('%s %s = %1.4f;',titlestr1,param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
+            titlestr1 = sprintf('%s {\\color[rgb]{%1.3f %1.3f %1.3f}%s_* = %1.4f};',titlestr1,linecolrs(i,:),param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
+%sprintf('%s $$%s$$ = %1.4f;',titlestr1,param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
           end
         end
-        set(get(gca,'Title'),'String',{sprintf('$$ %s $$',titlestr1),sprintf('$$ %s $$',titlestr2)},'interpreter','latex');
+        set(get(gca,'Title'),'String',{sprintf('%s',titlestr1),sprintf('%s',titlestr2)},'interpreter','tex');
         
         if (maxiter - optimvalues.iteration) == 1
           for i = 1:length(plotvar)
@@ -496,6 +523,8 @@ exp_outputs.nbins = nbins;
     %       %       plot(repmat([blki-1,blki].*199,[length(ind),1])',...
     %       %         repmat(ub(ind)',[1,2])','--')
     %     end
+    grid on;
+    set(gcf,'position',[169, 70, 1467, 894]);
   end
 
   function stop = saplotfall(options,optimvalues,flag)
@@ -533,9 +562,33 @@ exp_outputs.nbins = nbins;
   function stop = saplot_temp(options, optimvalues,flag)
     stop = false;
     param_names = {'trans x','trans y', 'rot', 'scale x', 'scale y', 'skew'};
+    linecolrs = lines(6);%[lines(6);0,0,1];
     switch flag
       case 'init'
-        plottemp = plot(optimvalues.iteration,optimvalues.temperature(min(length(optimvalues.x),varparam)), '.b');
+        %plottemp = plot(optimvalues.iteration,[optimvalues.temperature(min(length(optimvalues.x),varparam));mean(optimvalues.temperature)], 'x');
+        plottemp = plot(optimvalues.iteration,mean(optimvalues.temperature), '.b');
+        set(plottemp,'Tag','saplot_temp');
+        xlabel('Iteration ($$i$$)','interp','latex');
+        ylabel(sprintf('Temperature',param_names{varparam}),'interp','none')
+        title(sprintf('Annealing Temperature (\\tau = %1.2f)',tau));
+      case 'iter'
+        plottemp = findobj(get(gca,'Children'),'Tag','saplot_temp');
+        newX = [get(plottemp,'Xdata') optimvalues.iteration];
+        newY = [get(plottemp,'Ydata') mean(optimvalues.temperature)];
+        set(plottemp,'Xdata',newX, 'Ydata',newY);
+        %set(get(gca,'Title'),'String',sprintf('Best Parameter Value: %g',optimvalues.bestx(p)));
+    end
+    grid on
+  end
+
+  function stop = saplot_temp0(options, optimvalues,flag)
+    stop = false;
+    param_names = {'trans x','trans y', 'rot', 'scale x', 'scale y', 'skew'};
+    linecolrs = lines(6);%[lines(6);0,0,1];
+    switch flag
+      case 'init'
+        %plottemp = plot(optimvalues.iteration,[optimvalues.temperature(min(length(optimvalues.x),varparam));mean(optimvalues.temperature)], 'x');
+        plottemp = plot(optimvalues.iteration,optimvalues.temperature(min(length(optimvalues.x),varparam)), 'o','markersize',2);
         set(plottemp,'Tag','saplot_temp');
         xlabel('Iteration ($$i$$)','interp','latex');
         ylabel(sprintf('Temperature',param_names{varparam}),'interp','none')
@@ -547,13 +600,16 @@ exp_outputs.nbins = nbins;
           newY = [get(plottemp(i),'Ydata') optimvalues.temperature(i)];
           set(plottemp(i),'Xdata',newX, 'Ydata',newY);
         end
+        
         %set(get(gca,'Title'),'String',sprintf('Best Parameter Value: %g',optimvalues.bestx(p)));
     end
+    set(plottemp,'Tag','saplot_temp',{'markeredgecolor'},mat2cell(linecolrs,ones(1,6),3),{'markerfacecolor'},mat2cell(linecolrs,ones(1,6),3));
     grid on
   end
 
   function stop = overlayGrayEdge(options, optimvalues,flag)
     stop = false;
+    linecolrs = lines(6);
     switch flag
       case 'init'
         Tx = muItx; Tx(varparam) = optimvalues.x; Tx = Tx./c;
@@ -565,13 +621,13 @@ exp_outputs.nbins = nbins;
         end
         %>>>> Specific to mean variance equalize images
         M1t = Mt(:,:,1);
-        M1t(M1t < -3) = -3;
-        M1t(M1t > 3) = 3;
+        %M1t(M1t < -3) = -3;
+        %M1t(M1t > 3) = 3;
         %<<<<
         Mtedge = edge(M1t,max(M1t(:))*0.10);%20);
         
         %>>>> Specific to mean variance equalize images
-        reF = F; reF(reF < -3) = -3; reF(reF > 3) = 3;
+        reF = F; %reF(reF < -3) = -3; reF(reF > 3) = 3;
         %<<<<
         reF = (reF - min(reF(:)))./(max(reF(:)) - min(reF(:)));
         if length(size(F)) > 2
@@ -593,13 +649,19 @@ exp_outputs.nbins = nbins;
         Fimg3(:,:,1) = ch1;
         Fimg3(:,:,2) = ch2;
         Fimg3(:,:,3) = ch3;
-        Itx = image(Fimg3);
+        Itx = imshowpair(Fimg3(plotRows,plotCols,:),Fimg3(plotRows,plotCols,:),'montage');
         set(Itx,'Tag','saItx')
         axis image; axis ij;
-        title({[sprintf('[%1.2f,%1.2f,%1.2f,%1.2f,%1.2f,%1.2f]',optimvalues.x./c)],...
-          [sprintf('MI = %1.2f',optimvalues.fval)]});
+        tstr = '[';
+        for i = 1:length(c)
+          tstr = sprintf('%s {\\color[rgb]{%1.3f %1.3f %1.3f} %1.3f}',tstr,linecolrs(i,:),optimvalues.x(i)./c(i));%sprintf('%s $$%s$$ = %1.4f;',titlestr2,param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
+        end
+        tstr = [tstr ']'];
+        title({[tstr],[sprintf('MI = %1.4f, [%d,%d] Img',optimvalues.fval,length(plotRows),length(plotCols))]},'interpreter','tex')
+        %title({[sprintf('[%1.2f,%1.2f,%1.2f,%1.2f,%1.2f,%1.2f]',optimvalues.x./c)],...
+        %  [sprintf('MI = %1.4f',optimvalues.fval)]});
       case 'iter'
-        if mod(optimvalues.iteration,50) == 0 || (maxiter - optimvalues.iteration) <= 2
+        if mod(optimvalues.iteration,10) == 0 || (maxiter - optimvalues.iteration) <= 2
           Itx = findobj(get(gca,'Children'),'Tag','saItx');
           Tx = muItx; Tx(varparam) = optimvalues.x; Tx = Tx./c;
           Mt = transform_image(M, Tx,'extrapval',nan,'outputimsz',size(F)); %imoverlay1x4(F,'',Mp,Mt,'')
@@ -610,13 +672,13 @@ exp_outputs.nbins = nbins;
           end
           %>>>> Specific to mean variance equalize images
           M1t = Mt(:,:,1);
-          M1t(M1t < -3) = -3;
-          M1t(M1t > 3) = 3;
+          %M1t(M1t < -3) = -3;
+          %M1t(M1t > 3) = 3;
           %<<<<
           Mtedge = edge(M1t,max(M1t(:))*0.10);%20);
           
           %>>>> Specific to mean variance equalize images
-          reF = F; reF(reF < -3) = -3; reF(reF > 3) = 3;
+          reF = F; %reF(reF < -3) = -3; reF(reF > 3) = 3;
           %<<<<
           reF = (reF - min(reF(:)))./(max(reF(:)) - min(reF(:)));
           if length(size(F)) > 2
@@ -638,10 +700,56 @@ exp_outputs.nbins = nbins;
           Fimg3(:,:,1) = ch1;
           Fimg3(:,:,2) = ch2;
           Fimg3(:,:,3) = ch3;
-          image(Fimg3);
-          axis image; axis ij;
-          title({[sprintf('[%1.2f,%1.2f,%1.2f,%1.2f,%1.2f,%1.2f]',optimvalues.x./c)],...
-            [sprintf('MI = %1.2f',optimvalues.fval)]});
+         
+          Tx = muItx; Tx(varparam) = optimvalues.bestx; Tx = Tx./c;
+          Mt = transform_image(M, Tx,'extrapval',nan,'outputimsz',size(F)); %imoverlay1x4(F,'',Mp,Mt,'')
+          if length(size(Mt)) > 2
+            M1t = sum(Mt.*(1/size(Mt,3)),3);
+          else
+            M1t = Mt;
+          end
+          %>>>> Specific to mean variance equalize images
+          M1t = Mt(:,:,1);
+          %M1t(M1t < -3) = -3;
+          %M1t(M1t > 3) = 3;
+          %<<<<
+          Mbestedge = edge(M1t,max(M1t(:))*0.10);%20);
+          
+          %>>>> Specific to mean variance equalize images
+          reF = F; %reF(reF < -3) = -3; reF(reF > 3) = 3;
+          %<<<<
+          reF = (reF - min(reF(:)))./(max(reF(:)) - min(reF(:)));
+          if length(size(F)) > 2
+            ch1 = reF(:,:,1); ch2 = reF(:,:,2);
+            if size(F,3) >= 3
+              ch3 = reF(:,:,3);
+            else
+              ch3 = zeros(size(F,1),size(F,2));
+            end
+            v1 = 1; v2 = 1; v3 = 1;
+          else
+            ch1 = reF; ch2 = reF; ch3 = reF;
+            v1 = 1; v2 = 0; v3 = 0;
+          end
+          ch1(find(Mbestedge == 1)) = v1;
+          ch2(find(Mbestedge == 1)) = v2;
+          ch3(find(Mbestedge == 1)) = v3;
+          Fimgbest = repmat(ch1,[1,1,3]);
+          Fimgbest(:,:,1) = ch1;
+          Fimgbest(:,:,2) = ch2;
+          Fimgbest(:,:,3) = ch3;
+         
+          imshowpair(Fimgbest(plotRows,plotCols,:),Fimg3(plotRows,plotCols,:),'montage');
+          hold on; text(0,0,'BEST','color','y','fontweight','bold','verticalalignment','top','horizontalalignment','left');
+          %axis image; axis ij;
+          %title({[sprintf('[%1.2f,%1.2f,%1.2f,%1.2f,%1.2f,%1.2f]',optimvalues.x./c)],...
+          %  [sprintf('MI = %1.4f',optimvalues.fval)]});
+          tstr = '[';
+          for i = 1:length(c)
+            tstr = sprintf('%s {\\color[rgb]{%1.3f %1.3f %1.3f} %1.3f}',tstr,linecolrs(i,:),optimvalues.x(i)./c(i));%sprintf('%s $$%s$$ = %1.4f;',titlestr2,param_abb{varparam(i)},optimvalues.bestx(i)./c(varparam(i)));
+          end
+          tstr = [tstr ']'];
+          title({[tstr],[sprintf('MI = %1.4f, [%d,%d] Img',optimvalues.fval,length(plotRows),length(plotCols))]},'interpreter','tex')
         end
     end
   end
@@ -658,12 +766,12 @@ exp_outputs.nbins = nbins;
           M1t = Mt;
         end
         %>>>> Specific to mean variance equalize images
-        M1t = Mt(:,:,1); M1t(M1t < -3) = -3; M1t(M1t > 3) = 3;
-        M1t = (M1t + 3)./6;
+        %M1t = Mt(:,:,1); M1t(M1t < -3) = -3; M1t(M1t > 3) = 3;
+        %M1t = (M1t + 3)./6;
         %<<<<
         
         %>>>> Specific to mean variance equalize images
-        reF = F; reF(reF < -3) = -3; reF(reF > 3) = 3;
+        reF = F; %reF(reF < -3) = -3; reF(reF > 3) = 3;
         %<<<<
         reF = (reF - min(reF(:)))./(max(reF(:)) - min(reF(:)));
         Fimg3 = zeros(Fm,Fn,3);
@@ -687,12 +795,12 @@ exp_outputs.nbins = nbins;
             M1t = Mt;
           end
           %>>>> Specific to mean variance equalize images
-          M1t = Mt(:,:,1); M1t(M1t < -3) = -3; M1t(M1t > 3) = 3;
-          M1t = (M1t + 3)./6;
+          %M1t = Mt(:,:,1); M1t(M1t < -3) = -3; M1t(M1t > 3) = 3;
+          %M1t = (M1t + 3)./6;
           %<<<<
           
           %>>>> Specific to mean variance equalize images
-          reF = F; reF(reF < -3) = -3; reF(reF > 3) = 3;
+          reF = F;% reF(reF < -3) = -3; reF(reF > 3) = 3;
           %<<<<
           reF = (reF - min(reF(:)))./(max(reF(:)) - min(reF(:)));
           Fimg3 = zeros(Fm,Fn,3);

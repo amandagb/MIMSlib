@@ -43,6 +43,17 @@ function [Ipdf, pdfstruct] = EB_brainimg_classifyimgs(pibarc_struct,animals,Imas
 %     to erroneous results since pi ~= sum over c {p(i,c)}, so p_imarg is
 %     not used
 
+infocusimgs = {'20140819_pad2D_n08IPEB4','20140819_pad_IVIS2L_EB_pol0','20140819_pad2R_n16IPEB4','20140819_pad2V_n14IPEB4';...
+  '20140819_pad3D_n08IPEB4','20140819_pad_IVIS3L_EB_pol0','20140819_pad3R_n12IPEB4','20140819_pad3V_n07IPEB4';...
+  '20140819_pad4D_n06IPEB4','20140819_pad_IVIS4L_EB_pol0','20140819_pad4R_n07IPEB4','20140819_pad4V_n02IPEB4';...
+  '20140819_nopad5D_n02IPEB4','20140819_nopad_IVIS5L_EB_pol0','20140819_nopad5R_n07IPEB4','20140819_nopad5V_n08IPEB4';...
+  '20140819_nopad6D_n07IPEB4','20140819_nopad_IVIS6L_EB_pol0','20140819_nopad6R_n05IPEB4','20140819_nopad_IVIS6V_EB_pol0';...
+  '20140821_nopad8D_n08IPEB4','20140821_nopad_IVIS8L_EB_pol0','20140821_nopad8R_n09IPEB4','20140821_nopad8V_n01IPEB4';...
+  '20140821_nopad9D_n06IPEB4','20140821_nopad_IVIS9L_EB_pol0','20140821_nopad9R_n08IPEB4','20140821_nopad9V_n04IPEB4';...
+  '20140821_nopad10D_n03IPEB4','20140821_nopad_IVIS10L_EB_pol0','20140821_nopad10R_n06IPEB4','20140821_nopad10V_n02IPEB4';...
+  '20140821_pad12D_n03IPEB4','20140821_pad_IVIS12L_EB_pol0','20140821_pad_IVIS12R_EB_pol0','20140821_pad12V_n02IPEB4';...
+  '','20141118_pad_IVIS12L_EBAu_pol2','',''};
+
 %=========================================================================
 % Initialize folder & File Variables
 %=========================================================================
@@ -53,6 +64,7 @@ if ~exist('pibarc_struct') || isempty(pibarc_struct)
   clear pdfkde
 end
 startvin = 1;
+animals.imgnames = infocusimgs;
 
 PropertyNames = varargin(startvin:2:length(varargin));
 PropertyVal = varargin((startvin+1):2:length(varargin));
@@ -99,13 +111,13 @@ end
 if strmatch('evalview',PropertyNames)
   anatomy_str = PropertyVal{strmatch('evalview',PropertyNames)};
 else
-  anatomy_str = animals.anatomy_str;
+  anatomy_str = 'L';%animals.anatomy_str;
 end
 
 class_str = fieldnames(pibarc_struct);
 nclasses = length(class_str);
 full_class_str = {'Blood','EB','Contusion','Tissue'};
-class_color = {'r','b','g',''};
+class_color = [1,0,0;0,0,1;1,2/3,0 ;0,1,0];
 tstdata = getfield(pibarc_struct,class_str{1});
 lenx = length(tstdata(:));
 p_ibarc = zeros(lenx,nclasses);
@@ -140,7 +152,7 @@ infocusimgs = animals.imgnames;
 
 plotimgs = 1;
 
-for an = 1:length(animalnumvec) % for each animal number
+for an = 5%1:length(animalnumvec) % for each animal number
   ana_animalnum = animalnumvec(an);
   i = find(animals.id == ana_animalnum);
   animal_masks = getfield(Imasks,sprintf('an%d',ana_animalnum));
@@ -272,48 +284,50 @@ for an = 1:length(animalnumvec) % for each animal number
       %Iclass3(analyzeind(hemoind),3) = 0.75;
       %Iclass3(analyzeind(hemoind),1) = 0.75;
       %FOR GREEN HEMO CLASS
-      Iclass3(analyzeind(hemoind),[1,3]) = 1; % complex green
+      Iclass3(analyzeind(hemoind),1) = 1; % complex green
+      Iclass3(analyzeind(hemoind),2) = 2/3; % complex green
       Iclass3(analyzeind(tsuind),2) = 1; % complex green
       
       Iclass3 = reshape(Iclass3,[M,N,3]);
       
-      figure('position',[100,500,400,420],...%figure('position',[104         497        1762         420]);
-        'name',sprintf('%s_%sallclasses_%spc_EBfcnt1030',...
-        imgname(1:pad_str(2)-1),pmaxstr,pcstr));
-      trans_factor = 1;%0.15;
+      figure('position',figpos,...%figure('position',[104         497        1762         420]);
+        'name',['EBclass' imgname(pad_str(2)+1:pad_str(3)-1) 'raw']) %sprintf('%s_%sallclasses_%spc_EBfcnt1030', imgname(1:pad_str(2)-1),pmaxstr,pcstr));
+      trans_factor = 0.15;%1;%
       im2 = imagesc(Io); set(im2,'cdatamapping','scaled'); axis image
+      set(gca,'position',[0,0,1,1],'xticklabel','','yticklabel','');
+      save_open_figures(comppaths.thesisfig,[],[],'','fmt','png');
+
       hold on;
+      set(gcf,'name',['EBclass' imgname(pad_str(2)+1:pad_str(3)-1) 'class'])
       im1 = imagesc(Iclass3); set(im1,'Cdatamapping','scaled'); axis image;
-      set(gca,'xticklabel','','yticklabel','');
       set(im1,'AlphaData',ones(size(im1,1),size(im1,2)).*trans_factor)
       hold off;
-      set(gca,'position',[0,0,1,1])
-      set(gcf,'position',figpos)
-      text(1,1,{[strrep(sprintf('%s, pdf: %s, p(c): %s',imgname(1:pad_str(2)-1),usepdf,pcstr),'_','\_')]},...
-        'VerticalAlignment','top','color','w','fontsize',14)
+            %text(1,1,{[strrep(sprintf('%s, pdf: %s, p(c): %s',imgname(1:pad_str(2)-1),usepdf,pcstr),'_','\_')]},...
+      %  'VerticalAlignment','top','color','w','fontsize',14)
       for c = 1:nclasses
-        if ~isempty(class_color{c})
-          text(1,c*(M/10),{[strrep(sprintf('%s',full_class_str{c}),'_','\_')]},...
-            'VerticalAlignment','top','color',class_color{c},'fontsize',11,...
+        if ~isempty(class_color)
+          text(N/10,c*(M/10),{[strrep(sprintf('%s',full_class_str{c}),'_','\_')]},...
+            'VerticalAlignment','top','color',class_color(c,:),'fontsize',20,...
             'fontweight','bold')
         end
       end
+      save_open_figures(comppaths.thesisfig,[],[],'','fmt','png');
       %}
       
-      for c = 1:nclasses
-        figure('position',[100,500,400,420],...%figure('position',[104         497        1762         420]);
-          'name',sprintf('%s_%s%s_%spc_EBfcnt1030',...
-          imgname(1:pad_str(2)-1), pmaxstr,class_str{c},pcstr));
-        imagesc(Idist(:,:,c)); axis image;
-        hold on;
-        contour(IclassM(:,:,c),[0,0],'w');
-        text(1,1,{[strrep(sprintf('%s',imgname(1:pad_str(2)-1)),'_','\_')],...
-          [sprintf('%s',full_class_str{c})],...
-          [sprintf('colormap: %s',usepdf)]},...
-          'VerticalAlignment','top','color','w','fontsize',14)
-        set(gca,'position',[0,0,1,1])
-        set(gcf,'position',figpos)
-      end
+%       for c = 1:nclasses
+%         figure('position',[100,500,400,420],...%figure('position',[104         497        1762         420]);
+%           'name',sprintf('%s_%s%s_%spc_EBfcnt1030',...
+%           imgname(1:pad_str(2)-1), pmaxstr,class_str{c},pcstr));
+%         imagesc(Idist(:,:,c)); axis image;
+%         hold on;
+%         contour(IclassM(:,:,c),[0,0],'w');
+%         text(1,1,{[strrep(sprintf('%s',imgname(1:pad_str(2)-1)),'_','\_')],...
+%           [sprintf('%s',full_class_str{c})],...
+%           [sprintf('colormap: %s',usepdf)]},...
+%           'VerticalAlignment','top','color','w','fontsize',14)
+%         set(gca,'position',[0,0,1,1])
+%         set(gcf,'position',figpos)
+%       end
       if save_imgs; save_open_figures(strcat(comppaths.mtngpath,'\EBprocImgs'),[],[],'','fmt','png'); end
     end % end plot_imgs
     

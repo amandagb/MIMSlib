@@ -1,17 +1,18 @@
 function [data_struct,varargout] = readfiles(varargin);
 %% Script:  data_struct = readfiles;
-% Description:  Read Mass Spec Data in TXT or FIN2 files. Data files should be in a
-% subfolder 'RawData' by themselves. When prompted, user should select the
-% folder above RawData. Data from each isotope will be saved into a .csv
-% file in the selected directory. Script was tested on 12-11-10 Tg 18
-% Brain' data and took 7 seconds to run w/o writing csv files and 10.8
-% seconds when writing the 10 csv files.
+% Description:  Read Mass Spec Data in TXT, CSV, or FIN2 files. Data files
+% should be in a subfolder 'RawData' by themselves. When prompted, user
+% should select the parent directory of the RawData folder. Data from each
+% isotope will be saved into a .csv file in the selected directory. Script
+% was tested on 12-11-10 Tg 18 Brain' data and took 7 seconds to run w/o
+% writing csv files and 10.8 seconds when writing the 10 csv files.
 % Example:  d = readfiles('dat','20150102_icapqbrain');
 %           d = readfiles('dat','20150102_icapqbrain','save_data',0);
 %           [d,hdrtxt] = readfiles('20150218_1534_MIMSTest__ICAPQ_S1');
 % d = readfiles('comp','obsolete','data_dir','parentdir', 'readcsv',1,...
 %       'type','i','save_data',1,'line_offset',#);
-% Required Function: loaddirfun, skip_fields, auto_thresh, save32bitTIF
+% Required Function: loaddirfun, skip_fields, auto_thresh, save32bitTIF,
+% parseCBMstruct
 % INPUTS ----------------------------------------------------------------
 % varargin - 'PropertyName','PropertyValue'
 %   • 'computer':  string indicating 'pc' or 'pho' computer [DEFAULT = ADGB'S PC]
@@ -29,12 +30,12 @@ function [data_struct,varargout] = readfiles(varargin);
 %   indicating the percentages of data contained within values between min
 %   and lower thresh AND max and upper thresh. If one number, it will be
 %   treated as a logical -- 1 to save thresholded data (with 'auto' input
-%   into auto_thresh function) and 0 not to [DEFAULT = 1]
+%   into auto_thresh function) and 0 not to [DEFAULT = 0]
 %   • 'save32': logical indicating whether to save a 32-bit tif file or not
-%   in the 'Images' folder [DEFAULT = 1]
+%   in the 'Images' folder [DEFAULT = 0]
 %   • 'csv2folder': logical indicating whether to csv data files into
-%   separate folders (called 'CSV' and 'CSVth') or not [DEFAULT = 1]
-%   • 'write2server': logical indicating whether to save data to the serve
+%   separate folders (called 'CSV' and 'CSVth') or not [DEFAULT = 0]
+%   • 'write2server': logical indicating whether to save data to the server
 %   or not [DEFAULT = 0]
 %   • 'clean': logical indicating whether to delete element CSV files from
 %   parent directory or not [IF write2server, DEFAULT = 1; OTHERWISE
@@ -53,6 +54,8 @@ function [data_struct,varargout] = readfiles(varargin);
 %   Noel or not
 %       DEFAULTS associated with 'run4noel',1:
 %         'thresh', 1, 'save32', 1, 'csv2folder', 1, 'clean', 1, 'writexls', 1
+%   • 'labelstr': string indicating the MIMS image type the user would like
+%   to extract from a sequence (ie 'brainHIPP')
 % OUTPUTS ---------------------------------------------------------------
 % data_struct:  a structure contining a field with the name of each
 %   element for which data was collected. Each field contains a <# lines> x
@@ -71,15 +74,12 @@ function [data_struct,varargout] = readfiles(varargin);
 %   correspond to YYYY MM DD HH MM SS. These can be interpretered as
 %   strings using the datestr matlab function.
 %  Date           Author            E-mail                      Version
-%   5 Mar  2015   Amanda Balderrama amanda.gaudreau@gmail.com     7.2
-%     Modified multisheet excel writing
-%   6 Mar  2015   Amanda Balderrama amanda.gaudreau@gmail.com     7.3
-%  27 Mar  2015   Amanda Balderrama amanda.gaudreau@gmail.com     8
-%     Adding ability to save to server (path indicated in loaddirfun),
-%     parse and separate data, and replace string labels
-%  TO BE COMPLETED   Amanda Balderrama amanda.gaudreau@gmail.com     9
-%     Introduced ability to output only data from a specific label string
-%     (ie 'brainHIPP')
+%   5 Nov  2015   Amanda Balderrama amanda.gaudreau@gmail.com     10
+%     Revisitng function to make back-compatible with fin2 files from
+%     earlier work with Element XR
+%  12 Jan  2017   Amanda Balderrama amanda.gaudreau@gmail.com     10.1
+%     Bug fix: data variable not previously defined resulting in error at
+%     v10 line 256
 
 %% ---- Read data from text files, assumes comma delimiter ----
 signal_point = 1;
@@ -121,7 +121,7 @@ end
 if strmatch('comp',PropertyNames)
   v = PropertyVal{strmatch('comp',PropertyNames)};
   if strmatch(v,'pc')
-    current_dir = compdir.lafldr; % 'C:\Users\ADGB\Documents\MADLab Data\Laser Ablation\';
+    current_dir = compdir.lafldr; 
   elseif strmatch(v,'pho')
     current_dir = 'C:\Users\MADLAB\Desktop\LaserAblation\';
   elseif ~isempty(v)
@@ -132,7 +132,7 @@ if strmatch('comp',PropertyNames)
 elseif write2server
   current_dir = compdir.serverMIMSpath;
 else
-  current_dir = compdir.lafldr; % 'C:\Users\ADGB\Documents\MADLab Data\Laser Ablation\';
+  current_dir = compdir.lafldr; 
 end
 
 if ~isdir(current_dir)
@@ -147,7 +147,7 @@ if strmatch('dat',PropertyNames)
   if strmatch('\',v)
     datahomedir = v;
   else
-    datahomedir = strcat(current_dir,v);
+    datahomedir = [current_dir v];
   end
 else
   datahomedir = uigetdir(current_dir,'Select the directory containing the data you wish to analyze'); % Select directory with .Fin2 files
@@ -156,6 +156,8 @@ end
 while ~isdir(datahomedir)
   datahomedir = uigetdir(current_dir,'Select the directory containing the data you wish to analyze'); % Select directory with .Fin2 files
 end
+slashi = strfind(datahomedir,'\');
+v = datahomedir((slashi(end)+1):end);
 
 if strmatch('readcsv',PropertyNames)
   readcsv = PropertyVal{strmatch('readcsv',PropertyNames)};
@@ -257,9 +259,9 @@ exit_while = 0;
 
 switch patternnum
   case 3
-    disp('Output data structure represents thresholded raw data')
+    disp(sprintf('%s: Output data structure represents thresholded raw data',v))
   case 4
-    disp('Output data structure represents raw data')
+    disp(sprintf('%s: Output data structure represents raw data',v))
 end
 
 % Checks for existing csv files so that information does not need to be
@@ -419,8 +421,8 @@ if ~isempty(csvfiles) && readcsv
     colend = tcc.PixelIdxList{1}(end)-1;
   else 
     rowstart = 0;
-    rowend = size(timecsv,1) - 1;
-    strrows = [1:rowend]';
+    rowend = size(timecsv,1)-1;
+    strrows = [1:rowend+1]';
     trow = sum( ~ isnan( timecsv ) ) > 0 ;
     tcc = bwconncomp(trow);
     colstart = tcc.PixelIdxList{1}(1)-1;
@@ -484,7 +486,14 @@ else % this is executed if the raw data files need to be read
   % from the ICP-MS, the header of the files as well as the naming and
   % number of files will differ. Both checks will be performed.
   cd(datahomedir);
-  cd('RawData');
+  if isdir('RawData')
+    cd('RawData');
+  elseif isdir('Raw Data')
+    cd('Raw Data');
+  else
+    disp(sprintf('No RawData folder within the %s directory',v))
+    return
+  end
   rawdatadir = cd;
   % 1) determine the format of the files in the RawData folder
   rawdatafiles = ls;
@@ -519,6 +528,18 @@ else % this is executed if the raw data files need to be read
     ms1_oes0 = 1;
   elseif strmatch('.CSV',fmt)
     ms1_oes0 = 1;
+  end
+  
+  dir_sep = strfind(datahomedir(1:end-1),'\');
+  dir_LA = [];%strfind(datahomedir,'Laser Ablation');
+  if ~isempty(dir_LA)
+    start_ind = dir_sep(find(dir_sep == dir_LA-1)+1)+1;
+    end_ind = dir_sep(find(dir_sep == dir_LA - 1) + 2) - 1;
+    data_struct.dataset = rawdatadir(start_ind:end_ind);
+  else
+    start_ind = dir_sep(end) + 1;
+    end_ind = length(datahomedir);
+    data_struct.dataset = datahomedir(start_ind:end_ind);
   end
   
   if ms1_oes0 == 1 % data came from ICP-MS or ICAP-Q
@@ -567,9 +588,14 @@ else % this is executed if the raw data files need to be read
     end
     %line_rng = 1:25; max_line = 25;
     
-    A = importdata(strcat(file_num_cell{end},fmt), ',', hlines); %
+    if isempty(strmatch(lower(format),'c'))
+      A = importdata(strcat(file_num_cell{end},fmt), ',', hlines); %
+    else
+      A = importdata(strcat(file_num_cell{end},fmt), ',');%, hlines); %
+    end
+    hlines = size(A.textdata,1);
     [r,c] = size(A.data); % r: number of time samples per line; c: # elements + 1 (one column reserved for time)
-    r = max(500,r);
+    r = max(2000,r);
     data = nan(r,max_line,c);
     line_datevec = cell(max_line,1); line_datevec(:) = {nan(1,6)};
     hdrcol = cell(max_line,86); %hdrcol(:) = {nan};
@@ -578,12 +604,45 @@ else % this is executed if the raw data files need to be read
     
     for k = line_rng
       A = importdata(strcat(file_num_cell{k},fmt), ',', hlines);
+      %if ~isfield(A,'textdata')
+      %  A = struct('textdata',A,'data',[]);
+      %end
       if strmatch(lower(format),'f')
         date_str = A.textdata{2,1};
         if ~isnan(file_num(k))
+          [hdrfld,hdridx] = ICAPQhdrtxtfields;
+          linelabel = 'NoLabel';
           line_datevec{file_num(k),1} = datevec(date_str,'dddd, mmmm dd, yyyy HH:MM:SS');
+          [instrname,l1rem] = strtok(A.textdata{1});
+          [~,l1rem] = strtok(l1rem);
+          [machinestr,l1rem] = strtok(l1rem);
+          tsstr = datestr(line_datevec{file_num(k),1},'mm/dd/yyyy HH:MM:SS PM');
+          hdrdata{file_num(k),hdridx.LineName} = linelabel;
+          hdrdata{file_num(k),hdridx.TimeStamp} = tsstr;
+          hdrdata{file_num(k),hdridx.MfctrName} = instrname;
+          hdrdata{file_num(k),hdridx.InstStr} = machinestr;
+          hdrcol(file_num(k),:) = hdrfld;
+          lenhdrcol(file_num(k)) = length(hdrfld) - 3;
+        end
+      elseif strmatch(lower(format),'t')
+        date_str = sprintf('%s/%s/%s 00:00:00',data_struct.dataset(5:6),data_struct.dataset(7:8),data_struct.dataset(1:4));
+        if ~isnan(file_num(k))
+          [hdrfld,hdridx] = ICAPQhdrtxtfields;
+          linelabel = 'NoLabel';
+          line_datevec{file_num(k),1} = datevec(date_str,'mm/dd/yyyy HH:MM:SS');
+          [instrname,l1rem] = strtok(A.textdata{1});
+          [~,l1rem] = strtok(l1rem);
+          machinestr = 'OES';
+          tsstr = datestr(line_datevec{file_num(k),1},'mm/dd/yyyy HH:MM:SS PM');
+          hdrdata{file_num(k),hdridx.LineName} = linelabel;
+          hdrdata{file_num(k),hdridx.TimeStamp} = tsstr;
+          hdrdata{file_num(k),hdridx.MfctrName} = instrname;
+          hdrdata{file_num(k),hdridx.InstStr} = machinestr;
+          hdrcol(file_num(k),:) = hdrfld;
+          lenhdrcol(file_num(k)) = length(hdrfld) - 3;
         end
       elseif strmatch(lower(format),'c')
+        %disp(k)
         linetxt = A.textdata{1,1};
         colpos = strfind(linetxt,':');
         date_str = linetxt(colpos+1:end-1);
@@ -659,25 +718,33 @@ else % this is executed if the raw data files need to be read
       data(1:size(A.data,1),file_num(k),:) = A.data; %data(:,k,:) = A.data; %<time samples> x <# lines> x <# elements (+1 for time)> data matrix
     end
     cd ..
-    lenhdrlog = lenhdrcol < 83;
-    if any(lenhdrlog)
-      hrdi = find(lenhdrlog);
-      fulli = find(~lenhdrlog);
-      fullhdrs = hdrcol(fulli(1),1:83);
-      for i = hrdi(:)'
-        if lenhdrcol(i)
-          rowdat = hdrdata(i,1:lenhdrcol(i));
-          %hdrdata(i,1:lenhdrcol) = [];
-          rowhdrs = hdrcol(i,1:lenhdrcol(i));
-          [hi, ia,ib] = intersect(fullhdrs,rowhdrs,'stable');
-          hdrcol(i,1:83) = cell(1,83);
-          hdrcol(i,ia) = rowhdrs;
-          hdrdata(i,1:83) = cell(1,83);
-          hdrdata(i,ia) = rowdat;
-        end
-      end
-    else 
-      fullhdrs = hdrcol(1,1:83);
+    [ul,ia] = unique(lenhdrcol);
+    [lenh,lenmaxi] = max(ul);
+    %     lenhdrlog = lenhdrcol < 83;
+    %     if any(lenhdrlog)
+    %       hrdi = find(lenhdrlog);
+    %       fulli = find(~lenhdrlog);
+    %       fullhdrs = hdrcol(fulli(1),1:83);
+    %       for i = hrdi(:)'
+    %         if lenhdrcol(i)
+    %           rowdat = hdrdata(i,1:lenhdrcol(i));
+    %           %hdrdata(i,1:lenhdrcol) = [];
+    %           rowhdrs = hdrcol(i,1:lenhdrcol(i));
+    %           [hi, ia,ib] = intersect(fullhdrs,rowhdrs,'stable');
+    %           hdrcol(i,1:83) = cell(1,83);
+    %           hdrcol(i,ia) = rowhdrs;
+    %           hdrdata(i,1:83) = cell(1,83);
+    %           hdrdata(i,ia) = rowdat;
+    %         end
+    %       end
+    %     else
+    %       fullhdrs = hdrcol(1,1:83);
+    %     end
+    fullhdrs = hdrcol(ia(lenmaxi),1:83);% <-- can't use lenh since dwell time and isotope information is assumed to be in 84-86
+    emptyname = cellfun(@(x) isempty(x),hdrdata(:,1));
+    if any(emptyname) && any(find(emptyname) <= max(line_rng))
+      hdrdata(emptyname,1) = {'MissingFile'};
+      hdrdata(find(emptyname),2) = {sprintf('%s %s',datestr(1,'MM/DD/YYYY'),datestr(1,'HH:MM:SS PM'))};
     end
     hdrcell = [{fullhdrs{1,:},hdrcol{1,84:end}};hdrdata];
     
@@ -711,7 +778,7 @@ else % this is executed if the raw data files need to be read
       na.isos{1} = 'Time';% [sec]';
       vn = na.isos;%(2:end);%strtok(na.isos, '(LR)');
     elseif strmatch(lower(format),'c')
-      names =  A.textdata{14,1};
+      names =  A.textdata{hlines-1,1};
       elem = textscan(names, '%s' ,'delimiter', ',');
       na = cell2struct(elem,'isos',1);
       na.isos{1} = 'Time';
@@ -763,7 +830,7 @@ else % this is executed if the raw data files need to be read
         end
       end
       if k == 1
-        data_struct = cell2struct({temp},'Time',1);
+        data_struct = setfield(data_struct,'Time',temp);%ell2struct({temp},'Time',1);
       else
         data_struct = setfield(data_struct,elem_name,temp);%cell2struct({temp},elem_name,1);
         elendnum = [elendnum;elem_name];
@@ -795,20 +862,9 @@ else % this is executed if the raw data files need to be read
         csvwrite(csvname,data_struct.line_datevec);
       end
     end
-    
-    dir_sep = strfind(datahomedir(1:end-1),'\');
-    dir_LA = [];%strfind(datahomedir,'Laser Ablation');
-    if ~isempty(dir_LA)
-      start_ind = dir_sep(find(dir_sep == dir_LA-1)+1)+1;
-      end_ind = dir_sep(find(dir_sep == dir_LA - 1) + 2) - 1;
-      data_struct.dataset = rawdatadir(start_ind:end_ind);
-    else
-      start_ind = dir_sep(end) + 1;
-      end_ind = length(datahomedir);
-      data_struct.dataset = datahomedir(start_ind:end_ind);
-    end
-    
+        
     data_struct = orderfields(data_struct,fldorder);
+    data_struct.line_datevec = cell2mat(data_struct.line_datevec);
     nonempty_hcol = cellfun(@(x) ~isempty(x),hdrcell(:,2));
     nnonempty = sum(nonempty_hcol);
     basecell = cell(nnonempty, sz(1) + 2);

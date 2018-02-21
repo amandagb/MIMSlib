@@ -1,4 +1,4 @@
-function [thresh,pnt_ind,dth] = auto_thresh(d,modestr,pcORvalstr,varargin)
+function [] = MIMSkmeans(I)
 %% Script: [thresh,pnt_ind] = auto_thresh(d,modestr,nbins)
 % Description: Backward search to find the intensity data that makes up the highest x-% of values
 % Example:

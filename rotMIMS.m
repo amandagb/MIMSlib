@@ -1,6 +1,7 @@
-function [dout,varargout] = rotMIMS(data,rotTag);
-%% Script:  data_struct = MIMSmve;
-% Description:
+function [dout,varargout] = rotMIMS(data,rotTag)
+%% Script:  data_struct = rotMIMS(data,rotTag);
+% Description: Rotates the MIMS data structure according to the roatation
+% tag (defined visually in "MIMS Experiment Summary and Notes.pdf")
 %
 % Example:
 %
@@ -16,7 +17,7 @@ function [dout,varargout] = rotMIMS(data,rotTag);
 %       -2    Original data aquired VRDL, flip columns up/down (or flip LR
 %             then rotate twice)
 %       -1    Original data aquired RVLD, rotate 90 deg clockwise
-%        0    Original data aquired LDRV, rotate 90 deg ccw
+%        0    Original data aquired DRVL
 %        1    Original data aquired LDRV, rotate 90 deg ccw
 %        2    Original data aquired VLDR, rotate 180 deg
 % varargin - 'PropertyName','PropertyValue'

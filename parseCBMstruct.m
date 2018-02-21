@@ -42,7 +42,7 @@ if ~isdir(current_dir)
   current_dir = cd;
 end
 
-if isempty(strfind(current_dir,'ADGB')) || strmatch('run4noel',PropertyNames)
+if isempty(strfind(current_dir,'ADGB')) || isempty(strmatch('run4noel',PropertyNames))
   noelinit = 1;
 else
   noelinit = 0;
@@ -51,7 +51,7 @@ end
 if strmatch('nest',PropertyNames)
   nest = PropertyVal{strmatch('nest',PropertyNames)};
 elseif noelinit
-  nest = 1;
+  nest = 0;
 else
   nest = 0;
 end
@@ -125,6 +125,7 @@ relhtxt(reptxtind) = hdrtxt(reptxtind+1,1);
 
 if length(orderlines) > 1
   caliblines = find(cellfun(@isempty,strfind(lower(hdrtxt(2:end,1)),'calib')) == 0);
+  sollines =  find(cellfun(@isempty,strfind(lower(hdrtxt(2:end,1)),'solution')) == 0);
   if ~isempty(caliblines)
     nieghborlabels = unique(relhtxt([max(caliblines(1)-1,1),min(caliblines(end)+1,length(relhtxt))],1));
     inccaliblines = find(ismember(lower(relhtxt),lower(nieghborlabels)));
@@ -154,7 +155,39 @@ if length(orderlines) > 1
     newlinenames = cellfun(@(x,y) strcat(newrawfldr,'\',x,strtok(y),rawdatafmt),newnames,newnums,'uniformoutput',0);
     cellfun(@(x,y) copyfile(x,y),files2move,newlinenames)
     
-    idcalib = find(cellfun(@(x) ~isempty(x),strfind(line_types,'Calib')));
+    idcalib = find(cellfun(@(x) ~isempty(x),strfind(lower(line_types),'calib')));%ismember(lower(line_types),{'calib','solution'})));% 
+    idnist = find(cellfun(@(x) ~isempty(x),strfind(lower(line_types),'nist')));
+  elseif ~isempty(sollines)
+    caliblines = sollines;
+    nieghborlabels = unique(relhtxt([max(caliblines(1)-1,1),min(caliblines(end)+1,length(relhtxt))],1));
+    inccaliblines = find(ismember(lower(relhtxt),'nist612'));
+    inccaliblines = inccaliblines(inccaliblines < (caliblines(end)+5));
+    if nest
+      newfolder = strcat(origpath,'\Calibration');
+      newrawfldr = strcat(newfolder,'\RawData');
+    else
+      newfolder = strcat(origpath,'_calibration');
+      newrawfldr = strcat(newfolder,'\RawData');
+    end
+    
+    if ~isdir(newfolder)
+      mkdir(newfolder);
+    end
+    
+    if ~isdir(newrawfldr)
+      mkdir(newrawfldr)
+    end
+    
+    rawdatalines = unique(([caliblines;inccaliblines]));
+    files2move = rawdatacontent(csvorder(rawdatalines));
+    nlines = length(rawdatalines);
+    newnums = cellstr(num2str([1:nlines]'));
+    newnames = cell(nlines,1);
+    newnames(:) = cellstr(repmat(rawhdrstr,nlines,1));
+    newlinenames = cellfun(@(x,y) strcat(newrawfldr,'\',x,strtok(y),rawdatafmt),newnames,newnums,'uniformoutput',0);
+    cellfun(@(x,y) copyfile(x,y),files2move,newlinenames)
+    
+    idcalib = find(cellfun(@(x) ~isempty(x),strfind(line_types,'solution')));%ismember(lower(line_types),{'calib','solution'})));% 
     idnist = find(cellfun(@(x) ~isempty(x),strfind(lower(line_types),'nist')));
   else
     idcalib = [];
@@ -229,10 +262,16 @@ if length(orderlines) > 1
     for k = 1:length(basefldr)
       disp(sprintf('Writing to %s.........',basefldr{k}));
       if nest
-        readfiles('comp',strcat(origpath,'\'),...
+        [d,hdrtxt] = readfiles('comp',strcat(origpath,'\'),...
           'dat',basefldr{k},'parse',0,varargin{vinind});
       else
-        readfiles('dat',basefldr{k},'parse',0,varargin{vinind});
+        [d,hdrtxt] = readfiles('dat',basefldr{k},'parse',0,varargin{vinind});
+      end
+      
+      if strmatch('plot',PropertyNames)
+        close all;
+        plot_heatmap(d,[],'thresh','auto',...
+          'addlabels',hdrtxt,'save_heat',1);
       end
     end
     

@@ -155,6 +155,7 @@ else
   Frgb(:,:,1) = reshape(CmapF(:,1),M,N);
   Frgb(:,:,2) = reshape(CmapF(:,2),M,N);
   Frgb(:,:,3) = reshape(CmapF(:,3),M,N);
+  colmapstr = 'jet';
 end
 Frgb = (Frgb - min(Frgb(:)))./(max(Frgb(:))- min(Frgb(:)));
 switch dspmode
@@ -165,7 +166,7 @@ switch dspmode
     else
       trans_factor = 0.7;
     end
-    movingCmap = custom_colormaps('gray',ncol);%
+    movingCmap = custom_colormaps(colmapstr,ncol);%
 %-------------------------------------------------------------------------- 
   case 'checker'
     if strmatch('blocksz',PropertyNames)
@@ -268,16 +269,21 @@ switch npanels
     if ~exist('Icomb')
       im2 = image(Frgb); set(im2,'cdatamapping','scaled');
       hold on;
-      im1 = image(TxMnorm(:,:,1)); set(im1,'Cdatamapping','scaled'); colormap(movingCmap);
+      if size(TxMnorm,3) > 1
+        im1 = image(TxMnorm);
+        set(im1,'AlphaData',ones(size(im1,1),size(im1,2),size(im1,3)).*trans_factor)
+      else
+        im1 = image(TxMnorm(:,:,1)); set(im1,'Cdatamapping','scaled'); colormap(movingCmap);
+        set(im1,'AlphaData',ones(size(im1,1),size(im1,2)).*trans_factor)
+      end
       %set(gca,'xticklabel','','yticklabel','');
-      set(im1,'AlphaData',ones(size(im1,1),size(im1,2)).*trans_factor)
       hold off;
     else
       im3 = image(Icomb); set(im3,'cdatamapping','scaled');
     end
     title(sprintf('$$\\mathcal{M}^r_{%s}, \\mathcal{F}_{%s}$$ Overlayed',...
       Mstr,Fstr),'interpreter','latex')
-    set(gcf,'position',[  50         688        350         300])
+    set(gcf,'position',[50   338   731   645])
     if cbar
       colorbar(im1);
     end
@@ -309,7 +315,7 @@ switch npanels
     end
     title(sprintf('$$\\mathcal{M}^r_{%s}, \\mathcal{F}_{%s}$$ Overlayed',...
       Mstr,Fstr),'interpreter','latex')
-    set(gcf,'position',[  50         688        700         300])
+    set(gcf,'position',[50   338   731   645])
   case 4
     subplot(1,4,1);
     im0 = imagesc(moving); set(im0,'Cdatamapping','scaled'); colormap(movingCmap);
@@ -338,7 +344,7 @@ switch npanels
     end
     title(sprintf('$$\\mathcal{M}^r_{%s}, \\mathcal{F}_{%s}$$ Overlayed',...
         Mstr,Fstr),'interpreter','latex')
-    set(gcf,'position',[  50         688        1400         300])
+    set(gcf,'position',[50   338   731   645])
 end
 end
 

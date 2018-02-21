@@ -22,6 +22,7 @@
 %  ORIGINAL AUTHOR LILLA ZOLLEI for 6.555
 %  25 Apr 2013   Amanda Gaudreau   amanda.gaudreau@gmail.com     1
 %  20 Oct 2013   Amanda Gaudreau   amanda.gaudreau@gmail.com     2
+%  2  Apr 2017   Amanda Gaudreau   amanda.gaudreau@gmail.com     3
 
 % F = double(rgb2gray(PItimms));%SIhipp(:,:,[1,3]);
 % M = double(rgb2gray(PItimms));%PIatlas(:,:,4);
@@ -61,18 +62,18 @@ sz = size(F);
 midslices = round(sz/2);
 
 % Setting GUI parameters
-min_dx = mu0(1)-20;%-round(size(F,2)*0.2);
-max_dx = mu0(1)+20;%round(size(F,2)*0.2);
+min_dx = mu0(1)-round(size(F,2)*0.2);%-20;%
+max_dx = mu0(1)+round(size(F,2)*0.2);%20;%
 def_dx = mu0(1);
 range_dx = max_dx - min_dx;
 
-min_dy = mu0(2)-20;%-round(size(F,1)*0.2);
-max_dy = mu0(2)+20;%round(size(F,1)*0.2);
+min_dy = mu0(2)-round(size(F,1)*0.2);%-20;%
+max_dy = mu0(2)+round(size(F,1)*0.2);%20;%
 def_dy = mu0(2);
 range_dy = max_dy - min_dy;
 
-min_rot = mu0(3)*180/pi-10;
-max_rot = mu0(3)*180/pi+10;
+min_rot = mu0(3)*180/pi-20;
+max_rot = mu0(3)*180/pi+20;
 def_rot = mu0(3)*180/pi;
 range_rot = max_rot - min_rot;
 
@@ -92,6 +93,7 @@ def_sk = mu0(6);
 range_sk = max_sk - min_sk;
 
 Medgth = .05;%.15;
+usiF = [];
 reF = (F - min(F(:)))./(max(F(:)) - min(F(:)));
 if length(size(F)) > 2
   ch1 = reF(:,:,1); ch2 = reF(:,:,2);
@@ -102,11 +104,21 @@ if length(size(F)) > 2
     ch3 = zeros(Fm,Fn);
   end
   jetF = [ch1(:),ch2(:),ch3(:)];
+  if any(ch1(:)>min(ch1(:)))
+    usiF = [usiF,1];
+  end
+  if any(ch2(:)>min(ch2(:)))
+    usiF = [usiF,2];
+  end
+  if any(ch3(:) > min(ch3(:)))
+    usiF = [usiF,3];
+  end
 else
   [Fm,Fn] = size(F);
-  jetmap = jet(256);
+  jetmap = parula(256);
   reF = round(((F - min(F(:)))./(max(F(:)) - min(F(:)))).*255)./255;
   jetF = jetmap(reF(:).*255+1,:);
+  usiF = 1;
   %ch1 = reF; ch2 = reF; ch3 = reF;
 end
 % ch1(find(Mtedge == 1)) = 1;
@@ -121,13 +133,13 @@ end
 % jetmap = jet(256);
 % reF = round(((F - min(F(:)))./(max(F(:)) - min(F(:)))).*255)./255;
 % jetF = jetmap(reF(:).*255+1,:);
-[MIorig,info] = twoimgMIkde(F(:,:,1:2),M,'mu',[def_dx, def_dy, def_rot*pi/180, def_sx, def_sy, def_sk],...
+[MIorig,info] = twoimgMIkde(F(:,:,usiF(1)),M(:,:,1),'mu',[def_dx, def_dy, def_rot*pi/180, def_sx, def_sy, def_sk],...
   'extrapval',nan,'kernel',{'epan'},'nbins',20,'sumdim',1);
 titlestr2 = sprintf('Original MI: %1.4f, Original mu = [%1.1f,%1.1f,%1.1f,%1.1f,%1.1f,%1.1f]',...
   MIorig, def_dx, def_dy, def_rot, def_sx, def_sy, def_sk);
 titlestr1 = '';
 
-figure
+hman = figure;
 callbackString = [ 'T = [ get( dx_slider, ''value'' ),  get( dy_slider, ''value'' ),'...
   'get( rot_slider, ''value'' )*pi/180, get( sx_slider, ''value'' ),'...
   'get( sy_slider, ''value'' ), get( sk_slider, ''value'' )]; ' ...
@@ -140,15 +152,13 @@ callbackString = [ 'T = [ get( dx_slider, ''value'' ),  get( dy_slider, ''value'
   'set(rot_str, ''string'', [''rot = '' num2str(T(3)*180/pi, 3)] );'...def_dx = T(1);' ...
   'set(sx_str, ''string'', [''sx = '' num2str(T(4), 3)] );'...def_dx = T(1);' ...
   'set(sy_str, ''string'', [''sy = '' num2str(T(5), 3)] );'...
-  'set(sk_str, ''string'', [''sk = '' num2str(T(6), 3)] );'...'if length(size(F)) > 2; ch1 = reF(:,:,1); ch2 = reF(:,:,2); if size(F,3) >= 3; ch3 = reF(:,:,3); else ch3 = zeros(Fm,Fn); end'...
-  'ch1 = reshape(jetF(:,1),Fm,Fn); ch2 = reshape(jetF(:,2),Fm,Fn); ch3 = reshape(jetF(:,3),Fm,Fn);'...'else ch1 = reshape(jetF(:,1),Fm,Fn); ch2 = reshape(jetF(:,2),Fm,Fn); ch3 = reshape(jetF(:,3),Fm,Fn); end'...
-  'clear combined; Medge = edge(Emoved,Medgth); '...
-  'ch1(find(Medge == 1)) = 0; ch2(find(Medge == 1)) = 0; ch3(find(Medge == 1)) = 0;'...
-  'combined(:,:,1) = ch1; combined(:,:,2) = ch2; combined(:,:,3) = ch3; '...'clear combined; combined(:,:,1) = im1; combined(:,:,2) = im1; combined(:,:,3) = moved_im2;' ...
-  'imshow( combined, ''InitialMagnification'', ''fit'' );'...
+  'set(sk_str, ''string'', [''sk = '' num2str(T(6), 3)] );'...
+  'imoverlay(im1,'''',moved_im2,moved_im2,'''',''displaymode'',''checker'',''blocksz'',20,''npanels'',1,''figh'',hman); axis image;'...
+  'set(gca,''xticklabel'','''',''yticklabel'','''');'...
   'if get(compMI,''value''); titlestr1 = sprintf(''I_F: %s, I_M: %s, MI = %1.4f, T = [%1.1f,%1.1f,%1.1f,%1.1f,%1.1f,%1.1f]'''...
-  ',Fstr, Mstr,twoimgMIkde(F(:,:,1:2),moved,''kernel'',{''epan''},''nbins'',20,''sumdim'',1),T); end;'...
+  ',Fstr, Mstr,twoimgMIkde(F(:,:,1),moved(:,:,1),''kernel'',{''epan''},''nbins'',20,''sumdim'',1),T); end;'...
   'title({[titlestr1],[titlestr2]});'];
+% 'imoverlay(im1,'''',moved_im2,moved_im2,'''',''displaymode'',''rgbgray'',''npanels'',1,''transparency'',0.8,''figh'',hman);'...
 %   ',Fstr, Mstr,twoimgMIkde(F,moved,''kernel'',{''epan''},''nbins'',30),T)];'...
 %   '[sprintf(''Original MI: %1.4f, Original mu = [%1.1f,%1.1f,%1.1f,%1.1f,%1.1f,%1.1f]'','...
 %   'MIorig, def_dx, def_dy, def_rot, def_sx, def_sy, def_sk)]}); end' ];

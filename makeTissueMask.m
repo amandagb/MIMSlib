@@ -101,7 +101,7 @@ end
 if strmatch('dsfact',PropertyNames)
   dsfactv = PropertyVal{strmatch('dsfact',PropertyNames)};
 else
-  dsfactv = [8,1];
+  dsfactv = [8,2];
 end
 
 if strmatch('iter',PropertyNames)

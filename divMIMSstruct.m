@@ -1,7 +1,8 @@
 function [datastruct,hdrtxt,d_div,line_types,type_rows,varargout] = divMIMSstruct(datastruct,hdrtxt,varargin)
 %% function: divMIMSstruct
-% Description:
-% Example:
+% Description: Uses header text variable hdrtxt to determine the different
+% lines types contained within the MIMS data structure "data". 
+% Example: [data,hdrtxt,d_div,line_types,type_rows] = divMIMSstruct(data,hdrtxt);
 %     
 %
 % INPUTS ----------------------------------------------------------------
@@ -10,10 +11,21 @@ function [datastruct,hdrtxt,d_div,line_types,type_rows,varargout] = divMIMSstruc
 % hdrtxt: nrows + 1 x 86 cell which contains the header data from the
 %     instrument CSV files. Columns 84 - 86 have element information while
 %     all other columns have per line data
-% 
+% varargin: placeholder for potential future inputs (NONE in v1)
 %
 % OUTPUTS ---------------------------------------------------------------
-%
+% datastruct: same as input 
+% hdrtxt:     same as input 
+% d_div:      cell of structures. Each element contains data associated the
+%     labels contained in the "line_types" variable. The structure follows
+%     the format of the datastruct variable and can be treated as any MIMS
+%     structure.
+% line_types: cell of strings. Each element of the cell corresponds to a
+%     unique MIMS label used to identify data in the MIMS sequence
+% type_rows:  cell of matrices. Each element "i" contains a vector of the
+%     row numbers of data corresponding to the line_types{i}
+% varargout:  placeholder for potential future outputs  (NONE in v1)
+% 
 %  Date           Author              E-mail                      Version
 %  24 Mar  2015   Amanda Balderrama   amandagbalderrama@gmail.com     1
 

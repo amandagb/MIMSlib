@@ -38,33 +38,23 @@ slashi = strfind(currentfldr,'\');
 afterUi = find((slashi - Dpos) > 0);
 comp = currentfldr((slashi(afterUi(1))+1):(slashi(afterUi(2))-1));%'TENN1_000'; % MED comp %'ADGB'; % ThinkPad; %
 compbasepath = currentfldr(1:slashi(afterUi(2)));
-% if isdir(strcat(compbasepath,'Dropbox'))
-%   dboxpath = strcat(compbasepath,'Dropbox');
-% else
-  %dboxpath = strcat(compbasepath,'Documents\Dropbox');
-  dboxpath = strcat(compbasepath,'Documents'); %Changed 12062017 to reflect new file structure 
-% end
+compbasepath
+lafldr = 'E:\Dropbox\MATLAB\MIMSlib';% strcat(compbasepath,'SkyDrive\MADLab Data\LaserAblation\');%'Documents\MADLab Data\LaserAblation\');
+mlabpath = strcat(dboxpath,'\MADLab Research\MATLAB\MIMSlib');
+
+
+dboxpath = strcat(compbasepath,'Documents\Dropbox');
 fpath = strcat(dboxpath,'\MADLab Research\Data\');
-mtngpath = strcat(dboxpath,'\MADLab Research\Literature\Latex Citation Summary\');
-img_path = strcat(dboxpath,'\MADLab Research\Data\Cugrid Images\Photos\12-3-27 G50 Copper Grid Black background3 1212.jpg');
-cugridpath = strcat(dboxpath,'\MADLab Research\Data\Cugrid Images\Photos\12-3-27 G50 Copper Grid Black background3 1212.jpg');
-datapath = strcat(dboxpath,'\MADLab Research\Data\Mutual Information\');
-sapath = strcat(dboxpath,'\MADLab Research\Data\simanneal Experiments\');
-saMIMSbrain = strcat(dboxpath,'\MADLab Research\Data\simanneal Experiments\MIMSbrainData\');
-% lafldr = strcat(currentfldr(1:Dpos-1),'Documents\MADLab Data\LaserAblation\');
-lafldr = strcat(dboxpath,'\MADLab Data\LaserAblation\');
-% lafldr = strcat(compbasepath,'SkyDrive\MADLab Data\LaserAblation\');%'Documents\MADLab Data\LaserAblation\');
-mdatapath = strcat(dboxpath,'\MADLab Data\');
+
+mdatapath = strcat(compbasepath,'SkyDrive\MADLab Data\');
 dbEBexppath = strcat(fpath,'EB Experiments\');
 EBexppath = strcat(mdatapath,'EB_Experiments\');
 ivisfldr = strcat(EBexppath,'IVIS_EBFluor\');
-thesisfig = [mdatapath 'ThesisFig'];
-mlabpath = strcat(dboxpath,'\MADLab Research\MATLAB\MIMSlib');
+
 antspath = 'C:\Program Files (x86)\ANTS\bin';
 EBfldr = strcat(EBexppath,'RGBmacroscopic');%strcat(fpath,'EB_brainimg');
 rgbEBfldr = strcat(EBexppath,'RGBmacroscopic');%strcat(fpath,'EB_brainimg');
 draperdata = strcat(mlabpath,'draper\data\');
-serverTBIexp = 'Z:\Projects\TBI\Experiment Data\';
 serverMIMSpath = 'Z:\CBM\ICAPQ\ICAPQ_LaserAblation\';
 dateyyyymmdd = datevec(now);
 dateyyyymmddstr = sprintf('%d%02d%02d',dateyyyymmdd(1:3));
@@ -79,10 +69,8 @@ comp_paths.img_path = img_path;
 comp_paths.cugridpath = cugridpath;
 comp_paths.datapath = datapath;
 comp_paths.sapath = sapath;
-comp_paths.saMIMSbrain = saMIMSbrain;
 comp_paths.lafldr = lafldr;
 comp_paths.mdatapath = mdatapath;
-comp_paths.thesisfig = thesisfig;
 comp_paths.EBexppath = EBexppath;
 comp_paths.dbEBexppath = dbEBexppath;
 comp_paths.ivisfldr = ivisfldr;
@@ -92,7 +80,6 @@ comp_paths.EBfldr = EBfldr;
 comp_paths.rgbEBfldr = rgbEBfldr;
 comp_paths.draperdata = draperdata;
 comp_paths.serverMIMSpath = serverMIMSpath;
-comp_paths.serverTBIexp = serverTBIexp;
 comp_paths.dateyyyymmdd = dateyyyymmdd;
 comp_paths.dateyyyymmddstr = dateyyyymmddstr;
 end

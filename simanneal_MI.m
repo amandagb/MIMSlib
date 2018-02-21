@@ -156,7 +156,7 @@ bestfval = zeros(1,initvars);
 temp = zeros(nparam,initvars);
 
 % Set simulated annealing options
-optSA = saoptimset('simulannealbnd');
+optSA = saoptimset('simulannealbnd');%optimoptions(@simulannealbnd);%
 optSA.PlotFcns = {@saplotfall,@saplot_temp,@saplotvar,@plotIMoverlay};%,@plotannealupdate};%@saplotbestx,@saplotbestf,@saplotx,@saplotf,@saplot_temp,@saplotvar};
 
 if PropertyVal{strmatch('track_gen',PropertyNames)}

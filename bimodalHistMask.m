@@ -1,4 +1,4 @@
-function [Imask] = bimodalHistMask(I,varargin)
+function [Imask,varargout] = bimodalHistMask(I,varargin)
 %% function: calibrationMask
 % Description:
 % Example:
@@ -31,6 +31,9 @@ function [Imask] = bimodalHistMask(I,varargin)
 %   instead of a number of histogram bins [DEFAULT = 50]
 %   • 'usenorm': logical indicating whether to use gmm algorithm or not
 %   [DEFAULT = 1]
+%   • 'minpnt': logical indicating whether threshold the data such that the
+%   the value corresponds to the point with minimum bin occupancy (minimum
+%   point in histogram) [DEFAULT = 0]
 %   • 'Ngmm': number of components in gmm [DEFAULT = 2]
 %   • 'plotimgs': logical indicating whether to plot images or not [DEFAULT = 0]
 %   • 'saveimgs': logical indicating whether to save images or not [DEFAULT = 0]
@@ -43,6 +46,10 @@ function [Imask] = bimodalHistMask(I,varargin)
 %
 % OUTPUTS ---------------------------------------------------------------
 % Imask:
+% varargout
+%   {1} structOut: Output structure with fields containing data used to
+%   compute peak locations and threshold
+%
 %
 %  Date           Author              E-mail                      Version
 %   1 Apr  2015   Amanda Balderrama   amandagbalderrama@gmail.com     1
@@ -50,6 +57,9 @@ function [Imask] = bimodalHistMask(I,varargin)
 %     Estimate the GMM parameters & cut off the foreground intensity based
 %     on
 %  24 June 2015   Amanda Balderrama   amandagbalderrama@gmail.com     3
+%  28 Sept 2015   Amanda Balderrama   amanda.gaudreau@gmail.com       4
+%     For tissue foregound segementation, that case where the element
+%     approximates an exponential well is considered
 
 compdir = loaddirfun;
 
@@ -86,12 +96,6 @@ else
   sqMask = 0;
 end
 
-if strmatch('nmed',PropertyNames)
-  nMF = PropertyVal{strmatch('nmed',PropertyNames)};
-else
-  nMF = 30;
-end
-
 if strmatch('quantfrac',PropertyNames) % quantile fraction
   qth = PropertyVal{strmatch('quantfrac',PropertyNames)};
 else
@@ -108,6 +112,12 @@ if strmatch('usenorm',PropertyNames)
   usenorm = PropertyVal{strmatch('usenorm',PropertyNames)};
 else
   usenorm = 1;
+end
+
+if strmatch('minpnt',PropertyNames)
+  minpnt = PropertyVal{strmatch('minpnt',PropertyNames)};
+else
+  minpnt = 0;
 end
 
 if strmatch('ngmm',PropertyNames)
@@ -152,12 +162,20 @@ else
   fname = '';
 end
 
-if nbins
+ubins = unique(I(:));
+if nbins && length(ubins) > nbins
   [hcnts,xcnts] = hist(I(:),nbins);
 else
-  xcnts = unique(I(:));
+  xcnts = ubins;
   hcnts = hist(I(:),xcnts);
 end
+
+if strmatch('nmed',PropertyNames)
+  nMF = PropertyVal{strmatch('nmed',PropertyNames)};
+else
+  nMF = max([length(hcnts)/20,3]);
+end
+
 MFUcnts = medfilt1(hcnts,nMF);
 [M,N] = size(I);
 
@@ -174,132 +192,222 @@ if plotimgs
 end
 %-----------------------------------------
 
-[pks,pind] = findpeaks(MFUcnts);
-pks = [MFUcnts(1),pks(:)'];
-pind = [1,pind(:)'];
-[pksord,indord] = sort(pks,'descend');
-if length(pksord) > (npks + 1)
-  dpks = diff(pind(indord));%diff(pksord);
-  pntco = 5;
-  dpks_large = find(abs(dpks) > pntco);
-  while length(dpks_large) < npks && pntco > 0
-    pntco = pntco - 1;
-    dpks_large = find(abs(dpks) > pntco);
-  end
-elseif MFUcnts(1) > min(pks) && length(pksord) > npks
-  dpks_large = 2:length(pksord);
-else 
-  dpks_large = 1:npks;
-end
-ipnts = [0,dpks_large(1:npks)];
-% pkpos = [pind(indord(1:ipnts(1))),pind(indord(ipnts(1)+1:ipnts(2)))
-pkpos = zeros(1,npks);
-pkval = zeros(1,npks);
-for i = 1:npks
-  pkpos(i) = round(mean(pind(indord((ipnts(i)+1):ipnts(i+1)))));
-  pkval(i) = mean(pks(indord((ipnts(i)+1):ipnts(i+1))));
-end
-[ppord,ppindord] = sort(pkpos,'ascend');
-pkpos1 = pkpos(ppindord(1));
-pkval1 = pkval(ppindord(1));
-pkpos2 = pkpos(ppindord(2));
-pkval2 = pkval(ppindord(2));
-Ival1 = xcnts(pkpos1);
-Ival2 = xcnts(pkpos2);
-if plotimgs
-  ylim([0,pkval2*1.5])
-  plot(xcnts([pkpos1;pkpos1]),[0,pkval1],':k')
-  plot(xcnts([pkpos2;pkpos2]),[0,pkval2],':k')
-end
+%-----------------------------------------
+% Determine whether there are peaks in the histogram -- detect whether it's
+% more of an exponential decay shape
+%-----------------------------------------
 
-if qth && ~usenorm
-  cntco = 0;
+if length(MFUcnts) == npks
+  ppindord = [1:npks];
+  pkpos = [1:npks];
+  pkval = MFUcnts(1:npks);
+  upperIco = xcnts(end);
+  lowerIco = mean(xcnts);
 else
-  [cntco,bestind] = min(MFUcnts(pkpos1:pkpos2));
-end
-TFvec = MFUcnts(pkpos1:pkpos2) <= cntco;
-
-if plotimgs
-  hco = plot([xcnts(1),xcnts(end)],[cntco,cntco],'--r');
-  htf = plot(xcnts(pkpos1:pkpos2),abs(TFvec-1).*pkval2,'g');
-end
-
-if usenorm
-  if qth <= 0
-    qth = 0.01;
+  [pks,pind] = findpeaks(MFUcnts);
+  if isempty(pks) % this occurs if the only peak is the peak at the beginning of the histogram
+    pks = [MFUcnts(1),MFUcnts(end)];
+    pind = [1,length(MFUcnts)];
+  else
+    pks = [MFUcnts(1),pks(:)'];
+    pind = [1,pind(:)'];
+    %pind = pind - 1;
   end
-  ccTF.NumObjects = 5;
-  qth = qth - 0.01;
-  while ccTF.NumObjects > 1
-    qth = qth + 0.01;
-    %   Igmm = I;
-    %   Igmm(I <= xcnts(bestind)) = 1;
-    %   Igmm(I > xcnts(bestind)) = 2;
-    %   obj = gmdistribution.fit(I(isnan(Igmm) == 0),2,'start',Igmm(isnan(Igmm) == 0));
-    %   if plotimgs
-    %     pxvals = pdf(obj,xcnts(:));
-    %     plot(xcnts(:),pxvals./max(pxvals).*max(hcnts),'c');
-    %   end
-    Itsu = I(I > xcnts(bestind+pkpos1-1));
-    mu = mean(Itsu(:));
-    sig = std(Itsu(:));
-    lowerIco = max(norminv(qth,mu,sig),xcnts(bestind+pkpos1-1));
-    [val,coind] = min(abs(xcnts - lowerIco));
-    cntco = MFUcnts(coind);
-    TFvec = MFUcnts(pkpos1:pkpos2) <= cntco;
-    upperIco = norminv(1-qth,mu,sig);
-    if plotimgs
-      delete(hco)
-      delete(htf)
-      if exist('hN')
-        delete(hN)
-      end
-      %hco = plot([0;length(xcnts)],[cntco,cntco],'--r');
-      hco = plot(xcnts([1,end]),[cntco,cntco],'--r');
-      htf = plot(xcnts(pkpos1:pkpos2),abs(TFvec-1).*pkval2,'g');
-      Isp = round((upperIco - lowerIco)/100);
-      xN = lowerIco:Isp:upperIco;
-      yN = normpdf(xN,mu,sig);
-      hN = plot(xN,(yN./max(yN)).*pkval2,'m');
-    end
-    ccTF = bwconncomp(TFvec);
-  end
-else
-  if qth
-    ccTF.NumObjects = 5;
-    while ccTF.NumObjects > 1
-      qth = qth + 0.01;
-      cntco = quantile(MFUcnts(pkpos1:pkpos2),qth);
-      TFvec = MFUcnts(pkpos1:pkpos2) <= cntco;
-      delete(hco)
-      delete(htf)
-      %hco = plot([0;length(xcnts)],[cntco,cntco],'--r');
-      hco = plot(xcnts([1,end]),[cntco,cntco],'--r');
-      htf = plot(xcnts(pkpos1:pkpos2),abs(TFvec-1).*pkval2,'g');
-      ccTF = bwconncomp(TFvec);
-    end
-    if plotimgs
-      if saveimgs
-        export_fig(strcat(cdir.mtngpath,fname,'_photodist'),'-png');
-      end
-      close(fh);
-    end
-  end
-  TFveci = find(MFUcnts(pkpos1:pkpos2) <= cntco);
-  bestind = TFveci(1)+pkpos1; %bestind + pkpos1;%TFveci(end)+pkpos1;% TFveci(round(length(TFveci)/2))+pkpos1; %
-  lowerIco = mean([xcnts(bestind),xcnts(pkpos1)]);%UI(bestind);
   
-  TFveci = find(MFUcnts(pkpos2+1:end) <= 2);
-  if isempty(TFveci)
-    TFveci = length(MFUcnts);
+  [pksord,indord] = sort(pks,'descend');
+  if length(pksord) > (npks + 1)
+    % This code block identifies regions to "clump" together
+    keepi = 1;
+    nvalid = 0;
+    dpks = abs(diff(pind(indord)));%diff(pksord);
+    pntco = 5;
+    for di = 1:(length(pind)-1)
+      ph = pksord(di:di+1);
+      piends = [pind(indord(di+1)), pind(indord(di))];
+      dpi = abs(diff(piends));
+      if abs(dpi) < pntco && nvalid < npks
+        btwi = min(piends):max(piends);
+        mv = min(MFUcnts(btwi));
+        if mv < min(ph)*0.5
+          keepi = [keepi,di+1];
+          nvalid = nvalid + 1;
+        elseif ismember(di,keepi)
+          pksord(di+1) = pksord(di);
+          indord(di+1) = indord(di);
+        end
+      else
+        keepi = [keepi,di+1];
+        nvalid = nvalid + 1;
+      end
+    end
+    dpks_large = keepi;
+  elseif MFUcnts(1) < min(pks) && length(pksord) > npks
+    dpks_large = 2:length(pksord);%1: npks;%
+  else
+    dpks_large = 1:npks;
   end
-  bestind = TFveci(1)+(pkpos2+1);
-  upperIco = xcnts(end);% xcnts(bestind); %---> Upper and lower intensity cut offs are found and applied to the image
+  
+  if length(dpks_large) < npks
+    dpks_large = 1:npks;
+  end
+  ipnts = [0,dpks_large(1:npks)];
+  % pkpos = [pind(indord(1:ipnts(1))),pind(indord(ipnts(1)+1:ipnts(2)))
+  pkpos = zeros(1,npks);
+  pkval = zeros(1,npks);
+  if length(pind) == npks
+    for i = 1:npks
+      pkpos(i) = pind(  indord(  ipnts(i+1 )  )  );
+      pkval(i) = pks(indord(ipnts(i+1)));
+      %pkpos(i) = round(mean(pind(indord((ipnts(i)+1):ipnts(i+1)))));
+      %pkval(i) = mean(pks(indord((ipnts(i)+1):ipnts(i+1))));
+    end
+  else
+    for i = 1:npks
+      pkpos(i) = pind(  indord(  ipnts(  min([i+1,length(pind)])  )  )  );
+      pkval(i) = pks(indord(ipnts(min([i+1,length(pind)]))));
+      %pkpos(i) = round(mean(pind(indord((ipnts(i)+1):ipnts(i+1)))));
+      %pkval(i) = mean(pks(indord((ipnts(i)+1):ipnts(i+1))));
+    end
+  end
+  
+  [ppord,ppindord] = sort(pkpos,'ascend');
+  if any(diff(ppord) <= 1 )
+    closeind = [1,find(diff(ppord) ~= 1)+1];
+    pkpos = pkpos(closeind);
+    [ppord,ppindord] = sort(pkpos,'ascend');
+  end
+  
+  pkpos1 = pkpos(ppindord(1));
+  pkval1 = pkval(ppindord(1));
+  if length(ppindord) < 2
+    lowerIco = pkval1;
+    upperIco = pkval1 + abs(diff(xcnts(1:2)));
+  else
+    pkpos2 = pkpos(ppindord(2));
+    pkval2 = pkval(ppindord(2));
+    Ival1 = xcnts(pkpos1);
+    Ival2 = xcnts(pkpos2);
+    if plotimgs
+      ylim([0,pkval2*1.5])
+      plot(xcnts([pkpos1;pkpos1]),[0,pkval1],':k')
+      plot(xcnts([pkpos2;pkpos2]),[0,pkval2],':k')
+    end
+    
+    if qth && ~usenorm
+      cntco = 0;
+    else
+      [cntco,bestind] = min(MFUcnts(pkpos1:pkpos2));
+    end
+    TFvec = MFUcnts(pkpos1:pkpos2) <= cntco;
+    medbtwnval = median(MFUcnts(pkpos1:pkpos2));
+    %     ccTF = bwconncomp(TFvec);
+    %     while ccTF.NumObjects > 1
+    %       cntco = cntco + 1;
+    %       bestind = find(MFUcnts(pkpos1:pkpos2) == cntco);
+    %       bestind = bestind(1);
+    %       TFvec = MFUcnts(pkpos1:pkpos2) <= cntco;
+    %       ccTF = bwconncomp(TFvec);
+    %     end
+    
+    if plotimgs
+      hco = plot([xcnts(1),xcnts(end)],[cntco,cntco],'--r');
+      htf = plot(xcnts(pkpos1:pkpos2),abs(TFvec-1).*pkval2,'g');
+    end
+    
+    if minpnt
+      lowerIco = xcnts(bestind+pkpos1-1);
+    elseif usenorm
+      if qth <= 0
+        qth = 0.01;
+      end
+      ccTF.NumObjects = 5;
+      qth = qth - 0.01;
+      while ccTF.NumObjects > 1 && qth < 0.25 && qth >= 0
+        qth = qth + 0.01;
+        %   Igmm = I;
+        %   Igmm(I <= xcnts(bestind)) = 1;
+        %   Igmm(I > xcnts(bestind)) = 2;
+        %   obj = gmdistribution.fit(I(isnan(Igmm) == 0),2,'start',Igmm(isnan(Igmm) == 0));
+        %   if plotimgs
+        %     pxvals = pdf(obj,xcnts(:));
+        %     plot(xcnts(:),pxvals./max(pxvals).*max(hcnts),'c');
+        %   end
+        Itsu = I(I > xcnts(bestind+pkpos1-1));
+        mu = mean(Itsu(:));
+        sig = std(Itsu(:));
+        lowerIco = max(norminv(qth,mu,sig),xcnts(bestind+pkpos1-1));
+        [val,coind] = min(abs(xcnts - lowerIco));
+        cntco = MFUcnts(coind);
+        TFvec = MFUcnts(pkpos1:pkpos2) <= cntco;
+        upperIco = norminv(1-qth,mu,sig);
+        if plotimgs
+          delete(hco)
+          delete(htf)
+          if exist('hN')
+            delete(hN)
+          end
+          %hco = plot([0;length(xcnts)],[cntco,cntco],'--r');
+          hco = plot(xcnts([1,end]),[cntco,cntco],'--r');
+          htf = plot(xcnts(pkpos1:pkpos2),abs(TFvec-1).*pkval2,'g');
+          Isp = round((upperIco - lowerIco)/100);
+          xN = lowerIco:Isp:upperIco;
+          yN = normpdf(xN,mu,sig);
+          hN = plot(xN,(yN./max(yN)).*pkval2,'m');
+        end
+        ccTF = bwconncomp(TFvec);
+        if cntco > medbtwnval*5 && medbtwnval > 0 || sum(TFvec) == length(TFvec)
+          ccTF.NumObjects = 5;
+          qth = qth - 0.011;
+        end
+      end
+    else
+      if qth
+        ccTF.NumObjects = 5;
+        while ccTF.NumObjects > 1 && qth < 0.25
+          qth = qth + 0.01;
+          cntco = quantile(MFUcnts(pkpos1:pkpos2),qth);
+          TFvec = MFUcnts(pkpos1:pkpos2) <= cntco;
+          if plotimgs
+            delete(hco)
+            delete(htf)
+            %hco = plot([0;length(xcnts)],[cntco,cntco],'--r');
+            hco = plot(xcnts([1,end]),[cntco,cntco],'--r');
+            htf = plot(xcnts(pkpos1:pkpos2),abs(TFvec-1).*pkval2,'g');
+          end
+          ccTF = bwconncomp(TFvec);
+        end
+        if plotimgs
+          if saveimgs
+            export_fig(strcat(cdir.mtngpath,fname,'_photodist'),'-png');
+          end
+          close(fh);
+        end
+      end
+      TFveci = find(MFUcnts(pkpos1:pkpos2) <= cntco);
+      bestind = TFveci(1)+pkpos1; %bestind + pkpos1;%TFveci(end)+pkpos1;% TFveci(round(length(TFveci)/2))+pkpos1; %
+      lowerIco = mean(xcnts(TFveci+pkpos1-1));% mean([xcnts(bestind),xcnts(pkpos1)]);%UI(bestind);
+      
+      TFveci = find(MFUcnts(pkpos2+1:end) <= 2);
+      if isempty(TFveci)
+        TFveci = length(MFUcnts);
+      end
+      bestind = TFveci(1)+(pkpos2+1);
+      upperIco = xcnts(end);% xcnts(bestind); %---> Upper and lower intensity cut offs are found and applied to the image
+    end
+  end
 end
 
 if ~thupperI
   upperIco = max(I(:));
 end
+
+structOut.histcnts = hcnts;
+structOut.histcntsMF = MFUcnts;
+structOut.histbins = xcnts;
+structOut.upperCO = upperIco;
+structOut.lowerCO = lowerIco;
+structOut.peakI = xcnts(pkpos(ppindord));
+structOut.peakhistval = pkval(ppindord);
 
 %====================================================
 % Uses a variety of morphological operations to create final tissue
@@ -339,4 +447,6 @@ else
   Imask = Pmaskfull;
 end
 % figure; imagesc(Imask)
+
+varargout{1} = structOut;
 end

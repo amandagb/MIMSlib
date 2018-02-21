@@ -40,7 +40,7 @@ function [phi_MI,varargout] = twoimgMIkde(A,B,varargin)
 %     - bandwidth: integer specifying the bandwidth (see f_hat above)
 %     [DEFAULT = Silverman's Rule-of-Thumb = sig_hat*C(K)*n^(-1/5)]
 %     - dimensions: indicates the dimension the spline should be applied to
-%   Multiple kernels can be chosen by letting the varaible have multiple
+%   Multiple kernels can be chosen by letting the variable have multiple
 %   rows:
 %             {'kernel1',[bw_d1,bw_d2,...],[d1,d2,...];
 %             'kernel2',[bw_d1,bw_d2,...],[d1,d2,...]}
@@ -81,6 +81,20 @@ function [phi_MI,varargout] = twoimgMIkde(A,B,varargin)
 %     withing the kernel support (Ksupp). If the support is infinite (ie
 %     Gaussian Kernel) then all possible bins in that dimension are
 %     evaluated.
+%  14 Nov  2016   Amanda Balderrama   amandagbalderrama@gmail.com  1
+%     Allowed for abaility to specify the bins in image A or B
+
+[MrA,NcA,dA] = size(A);
+allNaNimg = sum(isnan(A),3) < dA;
+if NcA == 1 || MrA == 1
+  useCols = 1:NcA;
+  useRows = 1:MrA;
+else
+  useCols = find(sum(allNaNimg) > 0);
+  useRows = find(sum(allNaNimg') > 0);
+end
+A = A(useRows,useCols,:);
+B = B(useRows,useCols,:);
 
 [MrA,NcA,dA] = size(A);
 if NcA < 10
@@ -147,17 +161,43 @@ else
   nbinsB = 50.*ones(1,dB);
 end
 
-if length(nbinsA) < dA
-  Abins = nbinsA.*ones(1,dA);
-else
-  Abins = nbinsA;
+if strmatch('Abins',PropertyNames)
+  Abins = PropertyVal{strmatch('Abins',PropertyNames)};
+else 
+  Abins = [];
 end
 
+if strmatch('Bbins',PropertyNames)
+  Bbins = PropertyVal{strmatch('Bbins',PropertyNames)};
+  for k = 1:dB
+    XevalB{k} = Bbins{k};
+    XnumB{k} = [1:1:length(Bbins{k})];
+  end
+  Bbins = cellfun(@(x) length(x),XevalB);
+  if any(Bbins) == 0
+    Bbins = [];
+    clear XevalB XnumB
+  else
+    bin_rngB = cellfun(@(x) mean(diff(x)),XevalB);
+  end
+else 
+  Bbins = [];
+end
 
-if length(nbinsB) < dB
-  Bbins = nbinsB.*ones(1,dB);
-else
-  Bbins = nbinsB;
+if isempty(Abins)
+  if length(nbinsA) < dA
+    Abins = nbinsA.*ones(1,dA);
+  else
+    Abins = nbinsA;
+  end
+end
+
+if isempty(Bbins)
+  if length(nbinsB) < dB
+    Bbins = nbinsB.*ones(1,dB);
+  else
+    Bbins = nbinsB;
+  end
 end
 
 if strmatch('Abinlim',PropertyNames)
@@ -206,13 +246,15 @@ else
   maxA = Abinlim(:,2)';
 end
 Arng = maxA - minA;
-bin_rngA = Arng./Abins;
-XevalA = cell(1,dA); XnumA = cell(1,dA);
-for k = 1:dA
-  Aflat(Aflat(:,k) < minA(k),k) = nan;
-  Aflat(Aflat(:,k) > maxA(k),k) = nan;
-  XevalA{k} = [0.5:1:(Abins(k) - 0.5)].*bin_rngA(k) + minA(k);
-  XnumA{k} = [1:1:Abins(k)];
+if ~exist('XnumA','var')
+  bin_rngA = Arng./Abins;
+  XevalA = cell(1,dA); XnumA = cell(1,dA);
+  for k = 1:dA
+    Aflat(Aflat(:,k) < minA(k),k) = nan;
+    Aflat(Aflat(:,k) > maxA(k),k) = nan;
+    XevalA{k} = [0.5:1:(Abins(k) - 0.5)].*bin_rngA(k) + minA(k);
+    XnumA{k} = [1:1:Abins(k)];
+  end
 end
 
 c(w,:) = clock; % w = 2
@@ -238,14 +280,16 @@ else
   maxB = Bbinlim(:,2)';
 end
 Brng = maxB - minB;
-bin_rngB = Brng./Bbins;
 Blims = cell(1,dB);
-XevalB = cell(1,dB); XnumB = cell(1,dB);
-for k = 1:dB
-  TxBflat(TxBflat(:,k) > maxB(k),k) = nan;%maxB(k);
-  TxBflat(TxBflat(:,k) < minB(k),k) = nan;%minB(k);
-  XevalB{k} = [0.5:1:(Bbins(k)-0.5)].*bin_rngB(k) + minB(k);
-  XnumB{k} = [1:1:Bbins(k)];
+if ~exist('XnumB','var')
+  bin_rngB = Brng./Bbins;
+  XevalB = cell(1,dB); XnumB = cell(1,dB);
+  for k = 1:dB
+    TxBflat(TxBflat(:,k) > maxB(k),k) = nan;%maxB(k);
+    TxBflat(TxBflat(:,k) < minB(k),k) = nan;%minB(k);
+    XevalB{k} = [0.5:1:(Bbins(k)-0.5)].*bin_rngB(k) + minB(k);
+    XnumB{k} = [1:1:Bbins(k)];
+  end
 end
 
 c(w,:) = clock; % w = 3
@@ -281,7 +325,12 @@ for kd = 1:size(Kdim,1)
       RK = 1/(2*sqrt(pi));
       kap2 = 1;
       K = @(u) exp(-u.^2./2)./sqrt(2*pi);
-      %Ksupp(:,Kdim{kd}) = [-1;1];
+      %Ksupp(:,Kdim{kd}) = repmat([-3;3],1,length(Kdim{kd}));
+%     case 'normsupp'
+%       RK = 1/(2*sqrt(pi));
+%       kap2 = 1;
+%       K = @(u) exp(-u.^2./2)./sqrt(2*pi);
+%       Ksupp(:,Kdim{kd}) = repmat([-1;1],1,length(Kdim{kd}));
     case 'rect'
       RK = 1/2;
       kap2 = 1/3;
@@ -349,7 +398,7 @@ else
   ABjoints = unique(Xi_int,'rows');
   ABjoints(ABjoints == 0) = 1;
   lasti = 0;
-  ABj = nan(dA+dB,round(size(ABjoints,1)*max(bw)*5));%round(prod(binsvec)*max(bw)*1));
+  ABj = nan(dA+dB,min([round(size(ABjoints,1)*max(bw)*5),size(ABjoints,1)]));%round(prod(binsvec)*max(bw)*1));
   for i = 1:size(ABjoints,1)
     j = 0; ieval = [];
     while j < dA+dB

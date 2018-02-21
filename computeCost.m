@@ -69,6 +69,11 @@ else
   MImethod = 'kde';
 end
 
+if strmatch('sumdim',PropertyNames)
+  sumdim = PropertyVal{strmatch('sumdim',PropertyNames)};
+else
+  sumdim = 0;
+end
 %.....................................................................
 %   data preparation
 %.....................................................................
@@ -85,14 +90,15 @@ Mnan(~repmat(Mmask,[1,1,Md])) = nan;
 TxM = transform_image(M,mu,'extrapval',M(1));
 TxMask = transform_image(double(Mmask),mu,'extrapval',double(Mmask(1)));
 usei = and(Fmask,TxMask);
-totpxls = sum(usei(:));
+totpxls = sum(usei(:)) - sum(sum(isnan(sum(cat(3,Fnan,Mnan),3))));
 TxMvec = reshape(TxM(:),[Mm*Mn,Md]);
 if Fd > Md
-  TxMvec(:,Md+1:Fd) = 0;
+  dFM = Fvec - [TxMvec,zeros(Fm*Fn,Fd - Md)];
 elseif Md > Fd
-  Fvec(:,Fd+1:Md) = 0;
+  dFM = [Fvec,zeros(Fm*Fn,Md - Fd)] - TxMvec;
+else
+  dFM = Fvec - TxMvec;
 end
-dFM = Fvec - TxMvec;
 
 switch coststr
   case 'mi'
@@ -100,25 +106,24 @@ switch coststr
       case 'mattes'
         
       case 'kde'
-        %Jrng = [
-        %if sumdim
-        % if Fd > 1
-        %    for i = 1:Fd
-        %      if sum(sum(Fnan(:,:,i)))
-        %        MI(i) = twoimgMIkde(Fnan(:,:,i),Mnan,varargin{:},'mu',mu);%'nbins',nbins);
-        %      else
-        %        MI(i) = 0;
-        %      end
-        %    end
-        %  else
-        %    MI = twoimgMIkde(Fnan,Mnan,varargin{:},'mu',mu);%'nbins',nbins);
-        %  end
-        %  J = -sum(MI);
-        %else
-        [MI,outinfo] = twoimgMIkde(Fnan(:,:,1:Fd),Mnan(:,:,1:Md),varargin{:},'mu',mu);%'nbins',nbins);
-        totpxls = outinfo.nonNANpxls;
-        J = -MI;
-        %end
+        if sumdim
+          if Fd > 1
+            for i = 1:Fd
+              if nansum(nansum(Fnan(:,:,i)))
+                MI(i) = twoimgMIkde(Fnan(:,:,i),TxM,varargin{:});%'nbins',nbins);
+              else
+                MI(i) = 0;
+              end
+            end
+          else
+            [MI,outinfo] = twoimgMIkde(Fnan,TxM,varargin{:});%'nbins',nbins);
+          end
+          J = -sum(MI);
+        else
+          [MI,outinfo] = twoimgMIkde(Fnan(:,:,1:Fd),TxM,varargin{:});%,'mu',mu);%'nbins',nbins);
+          totpxls = outinfo.nonNANpxls;
+          J = -MI;
+        end
     end
   case 'lp'
     %dvec = Fvec(usei(:),:) - TxMvec(usei(:),:);
@@ -145,7 +150,7 @@ switch coststr
   case 'max1'
     dFM = sum(abs(dFM).^pval,2);
     Jimg = reshape(dFM./(1+dFM),[Fm,Fn]);
-    J = sum(Jimg(usei));
+    J = nansum(Jimg(usei));
   case 'HL'
     dFM = sum(log(abs(dFM).^pval + 1),2);
     Jimg = reshape(dFM,[Fm,Fn]);

@@ -55,6 +55,7 @@ function varargout = plot_heatmap(data,elem_ana_range,varargin)
 %   not (0) [DEFAULT = 0]
 %   • 'handle': figure handle user would like to generate the images on. (0)
 %   to generate a new figure. [DEFAULT = 0]
+%   • 'axh': axis handle to plot on
 %   • 'type': string indicating whether data is given in insensity (counts
 %   per second) -- 'i'-- or absolute concentration (parts per million)
 %   --'c'-- [DEFAULT = 'i']
@@ -82,6 +83,8 @@ function varargout = plot_heatmap(data,elem_ana_range,varargin)
 %   • 'showcbar': binary indicating whether to show the colorbar (1) or
 %   not (0) [DEFAULT = 1]
 %   • 'cbarloc': string indicating the colorbar location [DEFAULT = 'westoutside']
+%   • 'cbarcol': string indicating the color of the text on the colorbar [DEFAULT = 'g']
+%   • 'showscalebar': integer indicating size of scale bar (in )
 %   • 'dockall': binary indicationg whether to dock all figures (1) or not
 %   (0) [DEFAULT = 0]
 %   • 'figpos': 4 x 1 vector indicating the figure position [DEFAULT = []]
@@ -92,6 +95,9 @@ function varargout = plot_heatmap(data,elem_ana_range,varargin)
 %   • 'addlabels': cell of strings <# lines> x 1 indicating the label
 %   associated with each line. IF value has more than 1 column, the input
 %   data will assumed to the hdrtxt structure
+%   • 'showaqarrow': Show aquisition arrows (useful when rottag is
+%   indiciated) [DEFAULT = 0]
+%   • 'eltxt':
 %   • 'useMask': binary matrix the same size as the data which indiates
 %   which pixels the user would like to plot. Pixels to be plotted should
 %   be indicated by a 1/true and others by 0 [DEFAULT = true(M,N)]
@@ -107,6 +113,12 @@ function varargout = plot_heatmap(data,elem_ana_range,varargin)
 %   7 Apr  2015   AGBalderrama   amandagbalderrama@gmail.com      8
 %     Allows user to specify map labels to plot or to add map label names
 %     to the image
+%   8 Feb  2016   AGBalderrama   amandagbalderrama@gmail.com      8.1
+%     Addition of parula colormap + ability to input hdrtxt or a cell of
+%     strings as the 'addlabels' property
+%  15 Feb  2017   AGBalderrama   amandagbalderrama@gmail.com      8.2
+%     Fixed a conditional
+
 
 PropertyNames = lower(varargin(1:2:length(varargin)));
 PropertyVal = varargin(2:2:length(varargin));
@@ -146,8 +158,8 @@ else
 end
 
 if isstruct(data) && strmatch('Time',fieldnames(data))
-  if strmatch('samp',PropertyNames)
-    t_samp = PropertyVal{strmatch('samp',PropertyNames)};
+  if strmatch('tsamp',PropertyNames)
+    t_samp = PropertyVal{strmatch('tsamp',PropertyNames)};
   else
     t_samp = [];
   end
@@ -158,10 +170,13 @@ if isstruct(data) && strmatch('Time',fieldnames(data))
       t_samp = nanmedian(nanmedian(diff(data.Time)));
     end
   end
-elseif strmatch('samp',PropertyNames)
-  t_samp = PropertyVal{strmatch('samp',PropertyNames)};
+  t_samp = abs(t_samp);
+elseif strmatch('tsamp',PropertyNames)
+  t_samp = PropertyVal{strmatch('tsamp',PropertyNames)};
+  t_samp = abs(t_samp);
 else
   t_samp = 0.5; % Time between successive samples
+  t_samp = abs(t_samp);
 end
 
 if strmatch('scan',PropertyNames)
@@ -177,8 +192,18 @@ else
   sc = 0;
 end
 
-if sc && readxl
-  [spot_size, l2l_dist, scan_speed, E, vgas, t_samp] = getphysicalparams(data.dataset);
+h2wratio = 3/4;
+if sc
+  dparam = getphysicalparams(data);
+  if dparam.errorflag == 0
+    spot_size = dparam.spotsize;
+    l2l_dist = dparam.l2ldist;
+    scan_speed = dparam.scanspeed;
+    t_samp  = dparam.tsamp;
+  else
+    disp(sprintf('User indicated parameters used: spot = %1.2f um, scan = %1.2f um/s, l2l = %1.2f um',spot_size,scan_speed,l2l_dist))
+  end
+  t_samp = abs(t_samp);
 end
 
 %--------------------------------------------------
@@ -221,7 +246,13 @@ end
 if strmatch('figpos',PropertyNames)
   fpos = PropertyVal{strmatch('figpos',PropertyNames)};
 else
-  fpos = [400,250,560,420];
+  fpos = [400,250,round(420/h2wratio),420];
+end
+
+if strmatch('showscale',PropertyNames)
+  scalebar = PropertyVal{strmatch('showscale',PropertyNames)};
+else
+  scalebar = [];
 end
 
 if strmatch('showcbar',PropertyNames)
@@ -242,10 +273,28 @@ else
   cbl = 'eastoutside';
 end
 
+if strmatch('cbarcol',PropertyNames)
+  cbarcol = PropertyVal{strmatch('cbarcol',PropertyNames)};
+else
+  cbarcol = 'k';
+end
+
+if strmatch('cbarfont',PropertyNames)
+  cbarfont = PropertyVal{strmatch('cbarfont',PropertyNames)};
+else
+  cbarfont = 14;
+end
+
 if strmatch('addlabels',PropertyNames)
   relhtxt = PropertyVal{strmatch('addlabels',PropertyNames)};
 else
   relhtxt = [];
+end
+
+if strmatch('eltxt',PropertyNames)
+  eltxt = PropertyVal{strmatch('eltxt',PropertyNames)};
+else
+  eltxt = [];
 end
 
 %--------------------------------------------------
@@ -275,6 +324,7 @@ if strmatch('over',PropertyNames)
     over_logical = [eye(3);1,1,0;1,0,1;0,1,1;1,1,1]; % R, G, B, Y, M, C, W
     over_col = repmat([0:color_res-1]'./color_res,1,3);%.*ones(color_res,3);
     trans_alpha = 1;
+    cb = 0;
   else
     over = 0;
     trans_alpha = 1;
@@ -302,9 +352,9 @@ end
 if strmatch('save_heat',PropertyNames)
   sv = PropertyVal{strmatch('save_heat',PropertyNames)};
   if strmatch('save_str',PropertyNames)
-    svstr = PropertyVal{strmatch('save_str',PropertyNames)};
+    addstr = PropertyVal{strmatch('save_str',PropertyNames)};
   else
-    svstr = '';
+    addstr = '';
   end
   
 else
@@ -351,12 +401,13 @@ if strmatch('chan',PropertyNames)
   chanord(strfind(chanordstr,'j') ) = 8;
   chanord(strfind(chanordstr,'f') ) = 9;
   chanord(strfind(chanordstr,'l') ) = 10;
+  chanord(strfind(chanordstr,'p') ) = 11;
 elseif over
   chanordstr = 'rgbymcw';
   chanordstr = chanordstr(1:length(elem_ana_range));
   chanord = 1:7;
 else
-  chanord = 8;
+  chanord = 11;
 end
 
 n = 0;
@@ -370,6 +421,12 @@ for pt = 1:length(ptag)
     end
     
     %% Figure handle
+    if strmatch('axh',PropertyNames)
+      axh = PropertyVal{strmatch('axh',PropertyNames)};
+    else
+      axh = [];
+    end
+    
     if strmatch('h',PropertyNames)
       h = PropertyVal{strmatch('h',PropertyNames)};
     else
@@ -378,11 +435,13 @@ for pt = 1:length(ptag)
     
     line_str = '';
     if strmatch('lines',PropertyNames)
-      l = PropertyVal{strmatch('lines',PropertyNames)};
+      lineInd = PropertyVal{strmatch('lines',PropertyNames)};
       if ~ischar(d)
-        d = d(l,:);
+        d = d(lineInd,:);
       end
-      line_str = strcat('LINES: ',num2str(min(l)),'-',num2str(max(l)),'; ');
+      line_str = strcat('LINES: ',num2str(min(lineInd)),'-',num2str(max(lineInd)),'; ');
+    else
+      lineInd = 0;
     end
     
     sample_str = '';
@@ -479,7 +538,7 @@ for pt = 1:length(ptag)
       
       elim_str = '';
       if strmatch('elim',PropertyNames)
-        l = PropertyVal{strmatch('elim',PropertyNames)};
+        elLim = PropertyVal{strmatch('elim',PropertyNames)};
         [nan_ln,v] = find(isnan(d)==1);
         nan_ln = unique(nan_ln);
         d(nan_ln,:) = [];
@@ -547,11 +606,19 @@ for pt = 1:length(ptag)
         yticklab{ncbarlabels} = sprintf('%s%1.2e',maxcbarlabel, ytick_level(ncbarlabels));
       end
       
-      if ~h % Generate a new figure
+      if h == 0 % Generate a new figure
+        if sc
+          h2wratio = ((l2l_dist*size(d,1) + spot_size))/(scan_speed*t_samp*size(d,2));
+          fpos(3) = ceil(fpos(4)/h2wratio);
+        end
         h = figure('Name',fstr,'color','w','position',fpos);
         handles = [handles,h];
       else
         %set(0,'currentfigure',h);
+      end
+      
+      if ~isempty(axh)
+        set(gcf,'currentaxes',axh)
       end
       
       if over && f ~= elem_ana_range(1)
@@ -579,21 +646,25 @@ for pt = 1:length(ptag)
           dplot = d;
           if strmatch('Linear',ptag{pt})
             imagesc(x, y, dplot,'alphadata',trans_alpha);
+            axh = gca;
             caxis(h,[r1,r2]);
             colormap(h,colr);
-            %cbarh = colorbar('southoutside','fontsize',fntsz,'xtick',ytick_level,'xticklabel',yticklab);
+            %cbh = colorbar('southoutside','fontsize',fntsz,'xtick',ytick_level,'xticklabel',yticklab);
             if cb
               switch cbl
                 case 'southoutside'
-                  cbarh = colorbar(cbl,'fontsize',fntsz,'xtick',xtick_level,'xticklabel',xticklab);
+                  cbh = colorbar(cbl,'fontsize',fntsz,...'YColor',cbarcol,...
+                    'xtick',xtick_level,'xticklabel',xticklab);
                 case 'eastoutside'
-                  cbarh = colorbar(cbl,'fontsize',fntsz,'ytick',ytick_level,'yticklabel',yticklab);
+                  cbh = colorbar(cbl,'fontsize',fntsz,...'YColor',cbarcol,...
+                    'ytick',ytick_level,'yticklabel',yticklab);
               end
             end
           end
           
           if strmatch('Log',ptag{pt})
             imagesc(x, y, log10(dplot),'alphadata',trans_alpha);
+            axh = gca;
             caxis(h,log10([r1,r2]));
             colormap(h,colr);
             if cb; colorbar(cbl); end
@@ -636,6 +707,7 @@ for pt = 1:length(ptag)
           if strmatch('Log',ptag{pt})
             imagesc(x, y, log10(dplot));
           end
+          axh = gca;
           
           if n == length(elem_ana_range);
             disptxt = sprintf(' %s',strrep(eltext,'_',''));
@@ -655,36 +727,42 @@ for pt = 1:length(ptag)
         
         if sc; axis image; end%set(gca,'dataaspectratio',[1,1,1]); end
         
-      else
+      else %NOT OVERLAYED IMAGES
         if chanord == 8
           colr = jet(color_res);
         elseif chanord == 9
           colr = custom_colormaps('fire');
         elseif chanord == 10
           colr = custom_colormaps('gray');
+        elseif chanord == 11
+          colr = custom_colormaps('parula');
         end
         dplot = d;
         if strmatch('Linear',ptag{pt})
           imagesc(x, y, dplot,'alphadata',trans_alpha);
+          axh = gca;
           caxis([r1,r2]);
           colormap(colr);
-          %cbarh = colorbar('southoutside','fontsize',fntsz,'xtick',ytick_level,'xticklabel',yticklab);
-          if cb
-            cbarh = colorbar(cbl,'fontsize',fntsz);
-            %             switch cbl
-            %               case 'southoutside'
-            %                 cbarh = colorbar(cbl,'fontsize',fntsz,'xtick',ytick_level,'xticklabel',yticklab);
-            %               case 'eastoutside'
-            %                 cbarh = colorbar(cbl,'fontsize',fntsz,'ytick',ytick_level,'yticklabel',yticklab);
-            %             end
+          %cbh = colorbar('southoutside','fontsize',fntsz,'xtick',ytick_level,'xticklabel',yticklab);
+        elseif strmatch('Log',ptag{pt})
+          imagesc(x, y, log10(dplot),'alphadata',trans_alpha);
+          axh = gca;
+          if r1 == 0
+            caxis(log10([min(dplot(dplot > 0)),r2]));
+          else
+            caxis(log10([r1,r2]));
           end
+          colormap(colr);
         end
         
-        if strmatch('Log',ptag{pt})
-          imagesc(x, y, log10(dplot),'alphadata',trans_alpha);
-          caxis(log10([r1,r2]));
-          colormap(colr);
-          if cb; colorbar; end
+        if cb
+          %switch cbl
+          %  case 'southoutside'
+          %    cbh = colorbar(cbl,'fontsize',fntsz,'xtick',ytick_level,'xticklabel',yticklab);
+          %  case 'eastoutside'
+          %    cbh = colorbar(cbl,'fontsize',fntsz,'ytick',ytick_level,'yticklabel',yticklab);
+          %end
+          cbh = colorbar(cbl,'fontsize',cbarfont,'ycolor',cbarcol);
         end
         
         if sc; set(gca,'dataaspectratio',[1,1,1]); end
@@ -696,9 +774,23 @@ for pt = 1:length(ptag)
       xLIM = xlim;
       txth = text('string',label(end-4:end),'position',[xLIM(2)*1.05,ext_x(2)],...
         'fontsize',fntsz)
-      %}
       xLIM = xlim;
       yLIM = ylim;
+      %}
+      if strmatch('xlim',PropertyNames)
+        xLIM = PropertyVal{strmatch('xlim',PropertyNames)};
+      else
+        xLIM = xlim;
+      end
+      xlim(xLIM)
+      
+      if strmatch('ylim',PropertyNames)
+        yLIM = PropertyVal{strmatch('ylim',PropertyNames)};
+      else
+        yLIM = ylim;
+      end
+      ylim(yLIM)
+      
       if over && length(elem_ana_range) == 1 && cb || ~over
         switch cbl
           case 'southoutside'
@@ -747,6 +839,23 @@ for pt = 1:length(ptag)
           title(title_text(1))
         end
       end;
+      
+      if cb
+        cph = get(cbh,'position');
+        axp = get(axh,'position');
+        set(cbh,'position',[cph(1),cph(2),cph(3),cph(4)*0.9],...[min([cph(1),0.85]),0.07,0.02,0.8],...
+          'fontsize',cbarfont,'fontweight','bold');
+%         cbynum = cellfun(@(x) str2num(x),get(cbh,'yticklabel'),'uniformoutput',0);
+%         if log10(cbynum{end}) > 3
+%           if any(rem(cbynum,1))
+%             cbystr = cellfun(@(x) sprintf('%1.1e',x),cbynum);
+%           else
+%             cbystr = cellfun(@(x) sprintf('%e',x),cbynum);
+%           end
+%         end
+        drawnow;
+        set(axh,'position',axp);
+      end
       %title({[sprintf('%s %s Linear Intensity [cps] Heatmap',data_str,fldnm{f})],...
       % [strcat(thresh_str,line_str,sample_str,elim_str)]},'fontsize',fntsz);
       
@@ -765,6 +874,17 @@ for pt = 1:length(ptag)
     
     if ~isempty(relhtxt)
       hold on;
+      if ~any(size(relhtxt) == 1)
+        if lineInd
+          relhtxt = relhtxt(lineInd+1,1);
+        else
+          relhtxt = relhtxt(2:end,1);
+        end
+      end
+      COpos = strfind(lower(relhtxt),'_line');
+      lineCOrows = find(cellfun(@(x) ~isempty(x),COpos));
+      relhtxt(lineCOrows) = cellfun(@(x,y) x(1:(y-1)),relhtxt(lineCOrows),COpos(lineCOrows),'UniformOutput',0);
+      
       [line_types,~,linesind] = unique(relhtxt,'stable');
       nistind = find(cellfun(@(x) ~isempty(x),strfind(lower(line_types),'nist')));
       labelchangei = find(diff(linesind) ~= 0) + 1;
@@ -775,7 +895,7 @@ for pt = 1:length(ptag)
       bgclr = 'k';
       colrs = lines(length(starti));
       for i = 1:length(starti)
-        if rem(i,2) == 0^(rem(nistind,2))
+        if isempty(nistind) || rem(i,2) == 0^(rem(nistind,2))
           %text(1.5,starti(i) + (endi(i) - starti(i) + 1)/2,strrep(relhtxt(starti(i)),'_','\_'),...
           text(N,starti(i),strrep(relhtxt(starti(i)),'_','\_'),...
             'fontsize',14,'HorizontalAlignment','right','BackgroundColor',bgclr,...
@@ -784,14 +904,17 @@ for pt = 1:length(ptag)
             'edgecolor',colrs(i,:),'linewidth',2,'linestyle',':')
         end
       end
-      svstr = 'labeled';
+      
+      if sv
+        svstr = sprintf('%s labeled',addstr);
+      end
     end
     
+    xdist = (xLIM(2) - xLIM(1))/50;
+    ydist = (yLIM(2) - yLIM(1))/50;
     if showaqarrow
       hold on;
       lnwdth = 2;
-      xdist = (xLIM(2) - xLIM(1))/50;
-      ydist = (yLIM(2) - yLIM(1))/50;
       switch rotTag
         case -2
           x1 = xLIM(1) + xdist;
@@ -859,6 +982,14 @@ for pt = 1:length(ptag)
       plot([x1,xt],[y1,yt],'g','LineWidth',lnwdth/2,'HandleVisibility','off')
       text(xt,yt,'t','HorizontalAlignment',thal,'VerticalAlignment',tval,'color','g')
     end
+    
+    if ~isempty(eltxt)
+      switch eltxt
+        case 'nw'
+          text(xLIM(1) + xdist,yLIM(1) + ydist,strrep(eltext,'_','\_'),'color','r',...
+            'VerticalAlignment','top','fontsize',16,'fontweight','bold');
+      end
+    end
     clear d
     if nomarks
       if ~legon
@@ -867,11 +998,19 @@ for pt = 1:length(ptag)
       set(gca,'box','off','xtick',[],'ytick',[],'xcolor','w','ycolor','w',...
         'color','none','position',[0,0,1,1]);
       title('');
-      if cb
-        cbh = colorbar;
-        cph = get(cbh,'position');
-        set(cbh,'position',[min([cph(1),0.91]),0.1,0.02,0.8]);
-      end
+      %       if cb
+      %         cbh = colorbar;%(cbl);
+      %         cph = get(cbh,'position');
+      %         set(cbh,'position',[min([cph(1),0.85]),0.07,0.02,0.8],'YColor',cbarcol,...
+      %           'fontsize',cbarfont,'fontweight','bold');
+      %       end
+    end
+    
+    if ~isempty(scalebar)
+      hold on;
+      plot([x(2) - xdist,x(2) - xdist - scalebar],(y(2)-ydist*5).*[1,1],'c','linewidth',6)
+      %text(min([x(2) - xdist,x(2) - xdist - scalebar]),(y(2)-ydist*5),...
+      %  sprintf('%d mm',scalebar),'color','w','fontsize',14,'verticalalignment','bottom');
     end
   end
 end
@@ -912,7 +1051,7 @@ elseif sv
     svfstr = '';
   end
   
-  if ~isempty(svstr)
+  if exist('svstr') && ~isempty(svstr)
     svfstr = sprintf('%s %s',svstr,svfstr);%,...
     %strrep(type((strfind(type,'[')+1):(strfind(type,']')-1)),'/','per'));
   elseif ~isempty(svfstr)
@@ -926,7 +1065,8 @@ elseif sv
   if dock
     dockf on all
   end
-  save_open_figures(data,[],[],strrep(svfstr,' ',''),varargin{:});
+  %save_open_figures(data,[],[],strrep(svfstr,' ',''),varargin{:});
+  save_open_figures(data,[],[],svfstr,varargin{:});
 end
 
 varargout{1}.figh = handles;

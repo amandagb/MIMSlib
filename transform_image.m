@@ -237,7 +237,7 @@ if sum(sum(A ~= eye(3))) ~= 0 % Checks if the input transform was an identity tr
     XYmap2UV_end = Tinv*[urng(2);vrng(2);1] + T(:,3) + 1 - 1e-6.*ones(3,1);
     if  XYmap2UV_end(1) > N
       xend = XYmap2UV_end(1)-1;%round(XYmap2UV_end(1))-1;
-      uend = xend + abs(xstart) + 0.5;
+      uend = round(xend + abs(xstart) + 0.5);
     else 
       uend = round(XYmap2UV_end(1))-1;%XYmap2UV_end(1) - 1;%
       xend = N;
@@ -245,7 +245,7 @@ if sum(sum(A ~= eye(3))) ~= 0 % Checks if the input transform was an identity tr
     
     if  XYmap2UV_end(2) > M
       yend = XYmap2UV_end(2) - 1;%round(XYmap2UV_end(2))-1;
-      vend = yend + abs(ystart) + 0.5;
+      vend = round(yend + abs(ystart) + 0.5);
     else 
       vend = round(XYmap2UV_end(2))-1;%XYmap2UV_end(2) - 1;%
       yend = M;

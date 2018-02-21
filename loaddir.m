@@ -35,7 +35,7 @@ set(0,'defaultfigurecolor','w','DefaultAxesFontSize',12,...'DefaultAxesFontWeigh
 currentfldr = cd;
 Dpos = strfind(currentfldr,'Documents');
 comp = currentfldr(strfind(currentfldr,'Users\')+6:Dpos-2);%'TENN1_000'; % MED comp %'ADGB'; % ThinkPad; %
-dboxpath = strcat(currentfldr(1:Dpos-1),'Documents\Dropbox');
+dboxpath = strcat(currentfldr(1:Dpos-1),'Dropbox');
 fpath = strcat(dboxpath,'\MADLab Research\Data\');
 mtngpath = strcat(dboxpath,'\MADLab Research\Literature\Latex Citation Summary\');
 img_path = strcat(dboxpath,'\MADLab Research\Data\Cugrid Images\Photos\12-3-27 G50 Copper Grid Black background3 1212.jpg');
@@ -43,7 +43,7 @@ cugridpath = strcat(dboxpath,'\MADLab Research\Data\Cugrid Images\Photos\12-3-27
 datapath = strcat(dboxpath,'\MADLab Research\Data\Mutual Information\');
 sapath = strcat(dboxpath,'\MADLab Research\Data\simanneal Experiments\');
 lafldr = strcat(currentfldr(1:Dpos-1),'Documents\MADLab Data\LaserAblation\');
-mdatapath = strcat(currentfldr(1:Dpos-1),'Documents\MADLab Data\');
+mdatapath = strcat(dboxpath,'\MADLab Data\');
 dbEBexppath = strcat(fpath,'EB Experiments\');
 EBexppath = strcat(mdatapath,'EB_Experiments\');
 ivisfldr = strcat(EBexppath,'IVIS_EBFluor\');

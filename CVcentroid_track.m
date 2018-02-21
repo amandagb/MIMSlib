@@ -1,4 +1,4 @@
-% function [segarea] = CVcentroid_track(ana_frame);
+function [segarea] = CVcentroid_track(ana_frame);
 %% Script:  CVcentroid_track --- not a function in v1, v3
 % Description: <E-mailed to Chad, Andy, Noel 2013 Feb 12 04:00>
 % CVcentroid_track will prompt for user interaction when necessary (only at

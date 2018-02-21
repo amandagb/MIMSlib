@@ -94,12 +94,14 @@ for f = elem_ana_range
     [sort_mu_MA,sort_ind] = sort(mu_MA);
     
     i = 1;
+    figure;
     while i
       thresh = sort_mu_MA(i);
       bv = zeros(1,length(mu_MA));
       bv(find(mu_MA > thresh)) = 1;
       d_bv = diff(bv);
       non0ind = find(d_bv ~= 0);
+      plot([mu_S;mu_MA]','.');hold on; plot(bv.*max(mu_MA),'ro'); hold off;
       if length(non0ind) == 2 && non0ind(1)>Ns/10 && non0ind(2)<length(mu_MA)-Ns/10
         thresh = (max(mu_MA)-mu_MA(non0ind(1)))/3+mu_MA(non0ind(1));
         bv = zeros(1,length(mu_MA));
